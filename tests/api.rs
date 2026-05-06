@@ -570,6 +570,36 @@ async fn lookup_returns_empty_when_no_provider_and_no_local() {
     assert!(body["providers_tried"].as_array().unwrap().is_empty());
 }
 
+// ---- IN-clause chunking regression -------------------------------------
+
+#[tokio::test]
+async fn list_items_handles_more_than_sqlite_param_limit() {
+    // SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999. Before the
+    // chunking fix, listing >999 items would throw "too many SQL
+    // variables" while load_all_stock built one giant IN-clause.
+    // We insert 1100 items directly into a fresh DB, then list them.
+    let h = Harness::boot_with(None, false).await;
+    let mut tx = h.pool.begin().await.unwrap();
+    for i in 0..1100i32 {
+        sqlx::query("INSERT INTO items (id, sku, name, category) VALUES (?, ?, ?, 'Tools')")
+            .bind(format!("I-CHUNK-{:04}", i))
+            .bind(format!("CHUNK-{:04}", i))
+            .bind(format!("Item {}", i))
+            .execute(&mut *tx).await.unwrap();
+    }
+    tx.commit().await.unwrap();
+
+    // Without chunking this would fail with a database error.
+    let resp = h.get("/api/items?limit=2000").await;
+    expect_ok(&resp);
+    let body = json(resp).await;
+    assert_eq!(
+        body.as_array().unwrap().len(),
+        1100,
+        "list must return all 1100 items across chunked stock loads"
+    );
+}
+
 // ---- aggregate stats ---------------------------------------------------
 
 #[tokio::test]

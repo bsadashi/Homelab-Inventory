@@ -303,6 +303,15 @@ async fn load_stock_for(pool: &sqlx::SqlitePool, id: &str) -> ApiResult<Vec<Stoc
         .collect())
 }
 
+/// Conservative chunk size for SQLite IN-clauses.
+///
+/// SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is 999 (32766 in
+/// newer 3.32+ builds, but we can't assume that). At 500 we have
+/// generous headroom and still keep the per-chunk round trip count
+/// low. List endpoints clamp at 5000 items so worst-case is 10
+/// chunks per call.
+const SQLITE_IN_CHUNK: usize = 500;
+
 async fn load_all_stock<'a>(
     pool: &sqlx::SqlitePool,
     ids: impl Iterator<Item = &'a str>,
@@ -311,33 +320,36 @@ async fn load_all_stock<'a>(
     if id_list.is_empty() {
         return Ok(Default::default());
     }
-    // Build placeholders for an IN clause; SQLite doesn't take arrays directly.
-    let placeholders = std::iter::repeat("?")
-        .take(id_list.len())
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "SELECT item_id, location_id, bin, qty, serials FROM item_stock WHERE item_id IN ({})",
-        placeholders
-    );
-    let mut q = sqlx::query(&sql);
-    for id in &id_list {
-        q = q.bind(id);
-    }
-    let rows = q.fetch_all(pool).await?;
     let mut out: std::collections::HashMap<String, Vec<StockLine>> = std::collections::HashMap::new();
-    for r in rows {
-        let item_id: String = r.get("item_id");
-        out.entry(item_id).or_default().push(StockLine {
-            l: r.get("location_id"),
-            b: r.try_get::<Option<String>, _>("bin").ok().flatten().unwrap_or_default(),
-            q: r.try_get("qty").unwrap_or(0),
-            serial: r
-                .try_get::<Option<String>, _>("serials")
-                .ok()
-                .flatten()
-                .and_then(|s| serde_json::from_str(&s).ok()),
-        });
+    for chunk in id_list.chunks(SQLITE_IN_CHUNK) {
+        // Build placeholders for an IN clause; SQLite doesn't take
+        // arrays directly. One ? per id, one chunk per round trip.
+        let placeholders = std::iter::repeat("?")
+            .take(chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT item_id, location_id, bin, qty, serials FROM item_stock WHERE item_id IN ({})",
+            placeholders
+        );
+        let mut q = sqlx::query(&sql);
+        for id in chunk {
+            q = q.bind(id);
+        }
+        let rows = q.fetch_all(pool).await?;
+        for r in rows {
+            let item_id: String = r.get("item_id");
+            out.entry(item_id).or_default().push(StockLine {
+                l: r.get("location_id"),
+                b: r.try_get::<Option<String>, _>("bin").ok().flatten().unwrap_or_default(),
+                q: r.try_get("qty").unwrap_or(0),
+                serial: r
+                    .try_get::<Option<String>, _>("serials")
+                    .ok()
+                    .flatten()
+                    .and_then(|s| serde_json::from_str(&s).ok()),
+            });
+        }
     }
     Ok(out)
 }
