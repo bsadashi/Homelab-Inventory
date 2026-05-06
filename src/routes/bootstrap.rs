@@ -34,17 +34,23 @@ pub struct Bootstrap {
 }
 
 async fn bootstrap(State(state): State<AppState>) -> ApiResult<Json<Bootstrap>> {
-    let locations = read_locations(&state.pool).await?;
-    let suppliers = read_suppliers(&state.pool).await?;
-    let items = read_items(&state.pool).await?;
-    let purchase_orders = read_pos(&state.pool).await?;
-    let sales_orders = read_sos(&state.pool).await?;
-    let transfers = read_transfers(&state.pool).await?;
-    let counts = read_counts(&state.pool).await?;
-    let activity = crate::audit::recent(&state.pool, 200).await?;
-    let status = read_status(&state.pool).await?;
+    Ok(Json(snapshot(&state.pool).await?))
+}
 
-    Ok(Json(Bootstrap {
+/// Build the dashboard hydration snapshot. Exported so the web shell can
+/// inject it into the HTML at render time, avoiding a second round trip.
+pub async fn snapshot(pool: &sqlx::SqlitePool) -> ApiResult<Bootstrap> {
+    let locations = read_locations(pool).await?;
+    let suppliers = read_suppliers(pool).await?;
+    let items = read_items(pool).await?;
+    let purchase_orders = read_pos(pool).await?;
+    let sales_orders = read_sos(pool).await?;
+    let transfers = read_transfers(pool).await?;
+    let counts = read_counts(pool).await?;
+    let activity = crate::audit::recent(pool, 200).await?;
+    let status = read_status(pool).await?;
+
+    Ok(Bootstrap {
         locations,
         suppliers,
         items,
@@ -54,7 +60,7 @@ async fn bootstrap(State(state): State<AppState>) -> ApiResult<Json<Bootstrap>> 
         counts,
         activity,
         status,
-    }))
+    })
 }
 
 async fn read_locations(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Location>> {

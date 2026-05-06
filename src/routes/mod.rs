@@ -12,6 +12,7 @@ pub mod sales_orders;
 pub mod stats;
 pub mod suppliers;
 pub mod transfers;
+pub mod web;
 
 use crate::auth;
 use crate::config::AllowOrigin;
@@ -33,6 +34,10 @@ pub fn build(state: AppState) -> Router {
 
     Router::new()
         .nest("/api", api)
+        // Frontend bundle. Stays outside the API auth middleware so the
+        // browser can load HTML/CSS/JS without a Bearer header — privacy
+        // for actual inventory data is enforced by /api auth.
+        .merge(web::router())
         // Defence-in-depth response headers applied to every response.
         // CSP is intentionally restrictive but permits the inline scripts
         // the in-browser Babel demo needs; tighten further by serving a
