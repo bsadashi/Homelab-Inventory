@@ -45,7 +45,7 @@ impl Provider for UpcItemDb {
     async fn lookup(&self, barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
         validate_barcode(barcode)?;
         let url = format!("{}?upc={}", self.base, barcode);
-        let resp = http().get(&url).send().await?;
+        let resp = http()?.get(&url).send().await?;
 
         // The API returns 200 even for "INVALID_UPC" — read the body to
         // distinguish a real miss from a transport error.

@@ -103,7 +103,7 @@ impl DigiKey {
                 }
             }
         }
-        let resp = http()
+        let resp = http()?
             .post(&self.token_url)
             .form(&[
                 ("grant_type", "client_credentials"),
@@ -142,7 +142,7 @@ impl Provider for DigiKey {
             "{}/products/v4/search/barcode/{}",
             self.base_url, barcode
         );
-        let resp = http()
+        let resp = http()?
             .get(&url)
             .bearer_auth(&token)
             .header("X-DIGIKEY-Client-Id", &self.client_id)

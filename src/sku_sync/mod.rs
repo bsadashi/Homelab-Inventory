@@ -139,15 +139,26 @@ pub async fn lookup_chain(
     Ok(Vec::new())
 }
 
-/// Single shared HTTP client. Built lazily and reused so we keep
-/// connection pools warm. 10 s timeout is conservative — UPCitemDB and
-/// DigiKey both respond in <1 s under normal conditions.
-fn http() -> reqwest::Client {
-    reqwest::Client::builder()
+/// Process-wide HTTP client. The original implementation rebuilt a
+/// fresh `reqwest::Client` on every call, silently negating the
+/// connection pool, the cached DigiKey OAuth token's value, and any
+/// reuse benefit at all. We now cache the client in a `OnceLock` so
+/// every provider call reuses the same TCP / TLS state, and surface
+/// builder failure as a `LookupError::Provider` instead of panicking
+/// inside a request handler.
+fn http() -> Result<&'static reqwest::Client, LookupError> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(c) = CLIENT.get() {
+        return Ok(c);
+    }
+    let new = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .user_agent(concat!("racklog/", env!("CARGO_PKG_VERSION")))
         .build()
-        .expect("reqwest client")
+        .map_err(|e| LookupError::Provider(format!("http client init failed: {e}")))?;
+    // get_or_init wins on race; the loser's freshly-built client is
+    // dropped harmlessly. Both paths return the surviving instance.
+    Ok(CLIENT.get_or_init(|| new))
 }
 
 /// Reject obvious junk before we make any network call. Keeps log
