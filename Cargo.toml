@@ -68,6 +68,12 @@ mime_guess = "2"
 # rustls-tls keeps the runtime image free of OpenSSL system deps.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
 
+# Authentication / authorization
+argon2 = "0.5"
+password-hash = "0.5"
+rand_core = { version = "0.6", features = ["std"] }
+rand = "0.8"
+
 [dev-dependencies]
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }

@@ -31,7 +31,7 @@ pub fn build(state: AppState) -> Router {
     let api = api_routes()
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            auth::require_token,
+            auth::require_auth,
         ))
         .layer(cors);
 

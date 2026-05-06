@@ -14,3 +14,4 @@ pub mod routes;
 pub mod seed;
 pub mod sku_sync;
 pub mod state;
+pub mod users;
