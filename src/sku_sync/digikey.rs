@@ -137,38 +137,56 @@ impl Provider for DigiKey {
 
     async fn lookup(&self, barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
         validate_barcode(barcode)?;
-        let token = self.token().await?;
-        let url = format!(
-            "{}/products/v4/search/barcode/{}",
-            self.base_url, barcode
-        );
-        let resp = http()?
-            .get(&url)
-            .bearer_auth(&token)
-            .header("X-DIGIKEY-Client-Id", &self.client_id)
-            .header("X-DIGIKEY-Locale-Site", &self.site)
-            .header("X-DIGIKEY-Locale-Language", &self.language)
-            .header("X-DIGIKEY-Locale-Currency", &self.currency)
-            .send()
-            .await?;
+        // First attempt with the cached token. On 401 we drop the
+        // cache and retry exactly once with a freshly-minted token —
+        // this hides routine token expiry from the caller. A second
+        // 401 surfaces as a real error.
+        let mut attempt = 0u8;
+        let parsed: BarcodeResponse = loop {
+            attempt += 1;
+            let token = self.token().await?;
+            let url = format!(
+                "{}/products/v4/search/barcode/{}",
+                self.base_url, barcode
+            );
+            let resp = http()?
+                .get(&url)
+                .bearer_auth(&token)
+                .header("X-DIGIKEY-Client-Id", &self.client_id)
+                .header("X-DIGIKEY-Locale-Site", &self.site)
+                .header("X-DIGIKEY-Locale-Language", &self.language)
+                .header("X-DIGIKEY-Locale-Currency", &self.currency)
+                .send()
+                .await?;
 
-        match resp.status().as_u16() {
-            200 => {}
-            404 => return Ok(Vec::new()),
-            401 => {
-                *self.token.lock().unwrap() = None; // force refresh next time
-                return Err(LookupError::Provider("digikey: 401".into()));
+            match resp.status().as_u16() {
+                200 => break resp.json().await?,
+                404 => return Ok(Vec::new()),
+                401 if attempt < 2 => {
+                    tracing::debug!("digikey 401, retrying with fresh token");
+                    *self.token.lock().unwrap() = None;
+                    continue;
+                }
+                401 => {
+                    *self.token.lock().unwrap() = None;
+                    return Err(LookupError::Provider(
+                        "digikey: unauthorised (token rotation failed)".into(),
+                    ));
+                }
+                s => {
+                    // Truncate body in the error message so we don't
+                    // log unbounded provider responses, and never
+                    // surface the body to the caller — only to logs.
+                    let body = resp.text().await.unwrap_or_default();
+                    let preview: String = body.chars().take(200).collect();
+                    tracing::warn!(status = s, body = %preview, "digikey error response");
+                    return Err(LookupError::Provider(format!(
+                        "digikey: status {}",
+                        s
+                    )));
+                }
             }
-            s => {
-                let body = resp.text().await.unwrap_or_default();
-                return Err(LookupError::Provider(format!(
-                    "digikey: status {} body {}",
-                    s, body
-                )));
-            }
-        }
-
-        let parsed: BarcodeResponse = resp.json().await?;
+        };
         let Some(p) = parsed.product else { return Ok(Vec::new()); };
 
         let mut r = LookupResult::new("digikey", barcode.to_string());

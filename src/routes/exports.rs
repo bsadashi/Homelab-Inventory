@@ -232,16 +232,46 @@ async fn import_items_csv(
             Ok(true) => summary.created += 1,
             Ok(false) => summary.updated += 1,
             Err(e) => {
+                // Public-facing message: never include the raw SQLite
+                // error text. The original code surfaced strings like
+                // "(code: 787) FOREIGN KEY constraint failed", leaking
+                // implementation detail (and table topology) to anyone
+                // who could call the import endpoint. Map known cases
+                // to friendly messages and log the full error
+                // server-side for ops to see.
+                tracing::warn!(line = line_no, sku = %sku, %e, "csv import row failed");
                 summary.errors.push(ImportError {
                     line: line_no,
                     sku: Some(sku),
-                    message: e.to_string(),
+                    message: sanitise_row_error(&e),
                 });
             }
         }
     }
 
     Ok(Json(summary))
+}
+
+fn sanitise_row_error(e: &ApiError) -> String {
+    // Match on the structural cases we expose; fall back to a generic
+    // message for anything else. Keep the strings short and free of
+    // any internal column / table names.
+    match e {
+        ApiError::BadRequest(m) => m.clone(),
+        ApiError::Conflict(m) => m.clone(),
+        ApiError::NotFound => "referenced record not found".into(),
+        ApiError::Database(sqlx::Error::Database(db))
+            if db.is_unique_violation() =>
+        {
+            "row violates a uniqueness constraint".into()
+        }
+        ApiError::Database(sqlx::Error::Database(db))
+            if db.is_foreign_key_violation() =>
+        {
+            "row references a record that does not exist".into()
+        }
+        _ => "row could not be saved".into(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
