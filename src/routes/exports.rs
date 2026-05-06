@@ -128,6 +128,25 @@ async fn import_items_csv(
     if body.trim().is_empty() {
         return Err(ApiError::BadRequest("empty CSV body".into()));
     }
+
+    // Snapshot supplier id/code lookups once up front so the row loop
+    // doesn't issue a per-row SELECT to validate references. The hot
+    // path now does one SQL operation per row (the upsert) plus one
+    // audit insert, instead of three queries each.
+    let supplier_rows = sqlx::query("SELECT id, code FROM suppliers")
+        .fetch_all(&state.pool)
+        .await?;
+    let mut supplier_by_id: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    let mut supplier_by_code: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for r in supplier_rows {
+        let id: String = r.get("id");
+        let code: String = r.get("code");
+        supplier_by_code.insert(code, id.clone());
+        supplier_by_id.insert(id);
+    }
+
     let mut lines = body.lines();
     let header = lines
         .next()
@@ -218,12 +237,23 @@ async fn import_items_csv(
         let barcode = cell(i_barcode).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
         let img = cell(i_img).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
 
+        // Resolve supplier reference against the pre-loaded map
+        // (no per-row SQL). Unknown supplier → null, matching the
+        // documented "tolerate missing FK" behaviour.
+        let resolved_supplier = supplier.as_deref().and_then(|s| {
+            if supplier_by_id.contains(s) {
+                Some(s.to_string())
+            } else {
+                supplier_by_code.get(s).cloned()
+            }
+        });
+
         // Per-row transaction: a bad row will roll back its own work
         // but leave previous rows committed. The audit chain is still
         // intact because record_in_tx runs inside the same tx.
         let outcome = upsert_one(
             &state.pool, &sku, &name, &category, brand.as_deref(),
-            supplier.as_deref(), cost, price, &unit,
+            resolved_supplier.as_deref(), cost, price, &unit,
             min_qty, max_qty, qty, allocated,
             barcode.as_deref(), img.as_deref(),
         ).await;
@@ -285,26 +315,8 @@ async fn upsert_one(
 ) -> ApiResult<bool> {
     let mut tx = pool.begin().await?;
 
-    // If the CSV references a supplier that doesn't exist locally,
-    // null it out rather than fail the whole row. This makes the
-    // export → import round-trip work against a fresh database where
-    // suppliers haven't been imported yet (suppliers are typically a
-    // separate, smaller dataset operators import first).
-    let supplier_id = match supplier {
-        Some(s) if !s.is_empty() => {
-            let exists: Option<String> = sqlx::query_scalar(
-                "SELECT id FROM suppliers WHERE id = ? OR code = ?",
-            )
-            .bind(s)
-            .bind(s)
-            .fetch_optional(&mut *tx)
-            .await?;
-            exists
-        }
-        _ => None,
-    };
-    let supplier = supplier_id.as_deref();
-
+    // Supplier reference was already resolved against the pre-loaded
+    // map by the caller; pass-through here.
     let existing: Option<String> =
         sqlx::query_scalar("SELECT id FROM items WHERE sku = ?")
             .bind(sku)
