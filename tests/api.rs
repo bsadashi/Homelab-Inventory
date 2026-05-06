@@ -570,6 +570,32 @@ async fn lookup_returns_empty_when_no_provider_and_no_local() {
     assert!(body["providers_tried"].as_array().unwrap().is_empty());
 }
 
+// ---- pagination --------------------------------------------------------
+
+#[tokio::test]
+async fn pos_paginates() {
+    let h = Harness::boot().await; // 7 seeded POs
+    let first = json(h.get("/api/pos?limit=3").await).await;
+    assert_eq!(first.as_array().unwrap().len(), 3);
+    let second = json(h.get("/api/pos?limit=3&offset=3").await).await;
+    assert_eq!(second.as_array().unwrap().len(), 3);
+    // Different page → different first item
+    assert_ne!(first[0]["id"], second[0]["id"]);
+    let third = json(h.get("/api/pos?limit=10&offset=6").await).await;
+    assert_eq!(third.as_array().unwrap().len(), 1, "tail page should have 1");
+}
+
+#[tokio::test]
+async fn sos_transfers_counts_paginate() {
+    let h = Harness::boot().await;
+    let sos = json(h.get("/api/sos?limit=2").await).await;
+    assert_eq!(sos.as_array().unwrap().len(), 2);
+    let trs = json(h.get("/api/transfers?limit=2").await).await;
+    assert_eq!(trs.as_array().unwrap().len(), 2);
+    let counts = json(h.get("/api/counts?limit=2").await).await;
+    assert_eq!(counts.as_array().unwrap().len(), 2);
+}
+
 // ---- outer layers ------------------------------------------------------
 
 #[tokio::test]

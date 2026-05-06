@@ -5,10 +5,11 @@ use crate::audit::{record_in_tx, AuditEvent};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{PurchaseLine, PurchaseOrder, PurchaseOrderInput};
 use crate::state::AppState;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};
 use axum::{Json, Router};
+use serde::Deserialize;
 use sqlx::Row;
 
 pub fn router() -> Router<AppState> {
@@ -17,11 +18,24 @@ pub fn router() -> Router<AppState> {
         .route("/:id", put(update).delete(delete).get(get_one))
 }
 
-async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<PurchaseOrder>>> {
+#[derive(Debug, Deserialize)]
+pub struct PageQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+async fn list(
+    State(state): State<AppState>,
+    Query(p): Query<PageQuery>,
+) -> ApiResult<Json<Vec<PurchaseOrder>>> {
+    let limit = p.limit.unwrap_or(200).clamp(1, 2000);
+    let offset = p.offset.unwrap_or(0).max(0);
     let rows = sqlx::query(
         "SELECT id, supplier_id, status, created, expected, received, total \
-         FROM purchase_orders ORDER BY created DESC",
+         FROM purchase_orders ORDER BY created DESC LIMIT ? OFFSET ?",
     )
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await?;
 
