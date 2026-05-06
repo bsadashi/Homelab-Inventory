@@ -59,8 +59,89 @@
   refreshBtn.title = 'New data on the server. Click to reload.';
   refreshBtn.addEventListener('click', () => location.reload());
 
+  // ── auth token entry (F3) ────────────────────────────────────────
+  // Small key-icon button that pops a prompt for the bearer token.
+  // Stored value lives in localStorage('racklog.token') via RL.api.
+  const tokenBtn = document.createElement('button');
+  tokenBtn.textContent = '🔑';
+  tokenBtn.title = 'Set / clear API bearer token';
+  Object.assign(tokenBtn.style, {
+    background: 'transparent', color: '#e5e7eb', border: '1px solid #475569',
+    padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px',
+  });
+  tokenBtn.addEventListener('click', () => {
+    const current = RL.api.getToken();
+    const next = window.prompt(
+      'API bearer token (leave blank to clear):',
+      current || ''
+    );
+    if (next === null) return; // user pressed cancel
+    RL.api.setToken(next.trim());
+    RL.api.refreshNow();
+  });
+
+  // ── CSV export / import (F6) ─────────────────────────────────────
+  const exportBtn = document.createElement('button');
+  exportBtn.textContent = '⬇ csv';
+  exportBtn.title = 'Download all items as CSV';
+  Object.assign(exportBtn.style, {
+    background: 'transparent', color: '#e5e7eb', border: '1px solid #475569',
+    padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px',
+  });
+  exportBtn.addEventListener('click', async () => {
+    try {
+      await RL.api.download('/api/exports/items.csv', 'items.csv');
+    } catch (e) {
+      alert(`Export failed: ${e.message || e}`);
+    }
+  });
+
+  const importBtn = document.createElement('button');
+  importBtn.textContent = '⬆ csv';
+  importBtn.title = 'Bulk-import items from a CSV file';
+  Object.assign(importBtn.style, {
+    background: 'transparent', color: '#e5e7eb', border: '1px solid #475569',
+    padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px',
+  });
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.csv,text/csv';
+  fileInput.style.display = 'none';
+  importBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const headers = { 'Content-Type': 'text/csv' };
+      const tok = RL.api.getToken();
+      if (tok) headers['Authorization'] = `Bearer ${tok}`;
+      const r = await fetch('/api/exports/items.csv', {
+        method: 'POST', headers, body: text, credentials: 'same-origin',
+      });
+      const result = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(result.message || `${r.status} ${r.statusText}`);
+      const ok = result.created + result.updated;
+      const errs = (result.errors || []).length;
+      alert(
+        `Import complete · ${result.created} created · ${result.updated} updated`
+        + (errs ? ` · ${errs} row error(s) — see response for details` : '')
+        + (ok > 0 ? '\n\nReloading to refresh views…' : '')
+      );
+      if (ok > 0) location.reload();
+    } catch (e) {
+      alert(`Import failed: ${e.message || e}`);
+    } finally {
+      fileInput.value = '';
+    }
+  });
+
   root.appendChild(dot);
   root.appendChild(label);
+  root.appendChild(tokenBtn);
+  root.appendChild(exportBtn);
+  root.appendChild(importBtn);
+  root.appendChild(fileInput);
   root.appendChild(refreshBtn);
   document.body.appendChild(root);
 
