@@ -381,26 +381,99 @@ fn num(f: f64) -> String {
 }
 
 /// RFC-4180 escape with CSV-injection neutralisation.
+///
+/// The first formulation only checked `value.chars().next()` against
+/// `=+-@`, which let `" =HYPERLINK(...)"` (leading whitespace) and
+/// `"\t=HYPERLINK(...)"` (leading tab) bypass the guard — Excel and
+/// Sheets still evaluate formulas with leading whitespace. We now
+/// neutralise any value whose first **non-whitespace** character is a
+/// formula trigger, including the additional triggers `\t` (tab,
+/// directly), `\r` (carriage return, also a formula starter in some
+/// products), and `|` (DDE-style attack vector).
 fn escape(value: &str) -> String {
-    let needs_quotes = value.contains(',')
-        || value.contains('"')
-        || value.contains('\n')
-        || value.contains('\r');
-    let neutralised = match value.chars().next() {
-        // Block formula-prefix injection. The leading apostrophe is the
-        // documented spreadsheet escape for "treat as literal text".
-        Some('=') | Some('+') | Some('-') | Some('@') => {
-            let mut s = String::with_capacity(value.len() + 1);
-            s.push('\'');
-            s.push_str(value);
-            s
-        }
-        _ => value.to_string(),
+    // Strip any leading ASCII whitespace (space, tab, NBSP-equivalent,
+    // CR/LF) when looking for a formula trigger so leading-space
+    // bypasses (` =1+2`) are caught too.
+    let content_first = value
+        .chars()
+        .find(|c| !c.is_ascii_whitespace())
+        .or_else(|| value.chars().next());
+    let dangerous = matches!(
+        content_first,
+        Some('=') | Some('+') | Some('-') | Some('@') | Some('|') | Some('\t')
+    );
+    let neutralised = if dangerous {
+        // Leading apostrophe is the documented spreadsheet escape for
+        // "treat as literal text".
+        let mut s = String::with_capacity(value.len() + 1);
+        s.push('\'');
+        s.push_str(value);
+        s
+    } else {
+        value.to_string()
     };
+    let needs_quotes = neutralised.contains(',')
+        || neutralised.contains('"')
+        || neutralised.contains('\n')
+        || neutralised.contains('\r')
+        || neutralised.contains('\t');
     if needs_quotes {
         format!("\"{}\"", neutralised.replace('"', "\"\""))
     } else {
         neutralised
+    }
+}
+
+#[cfg(test)]
+mod escape_tests {
+    use super::escape;
+
+    #[test]
+    fn plain_value_passes_through() {
+        assert_eq!(escape("hello"), "hello");
+    }
+
+    #[test]
+    fn leading_equals_neutralised() {
+        assert!(escape("=HYPERLINK(\"x\")").starts_with("\"'="));
+    }
+
+    #[test]
+    fn leading_space_then_equals_neutralised() {
+        // The previous implementation missed this — leading whitespace
+        // hid the formula trigger from the first-char check.
+        let escaped = escape(" =1+2");
+        assert!(
+            escaped.starts_with('\'') || escaped.starts_with("\"'"),
+            "expected single-quote prefix, got {:?}",
+            escaped
+        );
+    }
+
+    #[test]
+    fn leading_tab_then_equals_neutralised() {
+        let escaped = escape("\t=1+2");
+        assert!(
+            escaped.contains('\''),
+            "expected single-quote prefix, got {:?}",
+            escaped
+        );
+    }
+
+    #[test]
+    fn pipe_triggers_dde_escape() {
+        let escaped = escape("|cmd|");
+        assert!(escaped.contains('\''), "got {:?}", escaped);
+    }
+
+    #[test]
+    fn comma_value_quoted() {
+        assert_eq!(escape("a,b"), "\"a,b\"");
+    }
+
+    #[test]
+    fn embedded_quote_doubled() {
+        assert_eq!(escape("a\"b"), "\"a\"\"b\"");
     }
 }
 
