@@ -45,6 +45,10 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    // Initialise the uptime clock at boot so /api/admin/info and the
+    // metrics endpoint report time-since-boot, not time-since-first-call.
+    routes::admin::touch_uptime();
+
     let state = AppState::new(pool.clone(), cfg.clone());
     let app = routes::build(state)
         .layer(TraceLayer::new_for_http())

@@ -2,6 +2,7 @@
 //! tree mirrors the URL tree.
 
 pub mod activity;
+pub mod admin;
 pub mod bootstrap;
 pub mod counts;
 pub mod exports;
@@ -73,6 +74,7 @@ fn api_routes() -> Router<AppState> {
         .nest("/stats",     stats::router())
         .nest("/exports",   exports::router())
         .nest("/lookup",    lookup::router())
+        .nest("/admin",     admin::router())
 }
 
 /// Default-deny CORS. Set `RACKLOG_ALLOW_ORIGIN=https://...,https://...`

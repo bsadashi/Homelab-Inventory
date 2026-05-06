@@ -570,6 +570,140 @@ async fn lookup_returns_empty_when_no_provider_and_no_local() {
     assert!(body["providers_tried"].as_array().unwrap().is_empty());
 }
 
+// ---- admin surface -----------------------------------------------------
+
+#[tokio::test]
+async fn admin_info_reports_version_and_audit_head() {
+    let h = Harness::boot().await;
+    let body = json(h.get("/api/admin/info").await).await;
+    assert!(body["version"].is_string());
+    assert_eq!(body["database_url_kind"], "sqlite");
+    assert!(body["audit_entries"].as_i64().unwrap() >= 12);
+    assert!(body["audit_head"].is_string());
+    assert_eq!(body["audit_version"], 2);
+    assert_eq!(body["auth_required"], false);
+}
+
+#[tokio::test]
+async fn admin_stats_lists_every_table() {
+    let h = Harness::boot().await;
+    let body = json(h.get("/api/admin/stats").await).await;
+    let names: Vec<String> = body["tables"]
+        .as_array().unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    for expected in [
+        "items", "item_stock", "locations", "suppliers",
+        "purchase_orders", "sales_orders", "transfers", "counts", "activity_log",
+    ] {
+        assert!(names.contains(&expected.to_string()), "missing {}", expected);
+    }
+    // database_bytes should be >0 once something has been written.
+    assert!(body["database_bytes"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn admin_integrity_runs_pragma_and_chain_check() {
+    let h = Harness::boot().await;
+    let body = json(h.get("/api/admin/integrity").await).await;
+    assert_eq!(body["sqlite_ok"], true);
+    assert_eq!(body["audit_chain_valid"], true);
+    assert_eq!(body["audit_version"], 2);
+}
+
+#[tokio::test]
+async fn admin_vacuum_requires_confirmation() {
+    let h = Harness::boot().await;
+    let blocked = h.post_json("/api/admin/vacuum", &serde_json::json!({})).await;
+    expect_status(&blocked, StatusCode::BAD_REQUEST);
+
+    let ok = h.post_json("/api/admin/vacuum?confirm=1", &serde_json::json!({})).await;
+    expect_ok(&ok);
+    let body = json(ok).await;
+    assert_eq!(body["operation"], "vacuum");
+    assert_eq!(body["ok"], true);
+}
+
+#[tokio::test]
+async fn admin_wal_checkpoint_runs() {
+    let h = Harness::boot().await;
+    let resp = h.post_json("/api/admin/wal_checkpoint?confirm=1", &serde_json::json!({})).await;
+    expect_ok(&resp);
+    let body = json(resp).await;
+    assert_eq!(body["operation"], "wal_checkpoint");
+}
+
+#[tokio::test]
+async fn admin_retain_activity_dry_run_doesnt_delete() {
+    let h = Harness::boot().await;
+    let before = json(h.get("/api/admin/info").await).await["audit_entries"].as_i64().unwrap();
+    let resp = h.post_json(
+        "/api/admin/retain_activity?days=1&dry_run=1",
+        &serde_json::json!({}),
+    ).await;
+    expect_ok(&resp);
+    let body = json(resp).await;
+    assert_eq!(body["dry_run"], true);
+    assert_eq!(body["deleted"], 0);
+    let after = json(h.get("/api/admin/info").await).await["audit_entries"].as_i64().unwrap();
+    assert_eq!(before, after, "dry run must not mutate");
+}
+
+#[tokio::test]
+async fn admin_retain_activity_prunes_old_entries() {
+    let h = Harness::boot().await;
+    // Backdate every existing row so the retention cutoff catches them.
+    sqlx::query("UPDATE activity_log SET ts = '2000-01-01 00:00:00'")
+        .execute(&h.pool).await.unwrap();
+
+    let resp = h.post_json(
+        "/api/admin/retain_activity?days=30&confirm=1",
+        &serde_json::json!({}),
+    ).await;
+    expect_ok(&resp);
+    let body = json(resp).await;
+    assert!(body["deleted"].as_i64().unwrap() > 0);
+    // The retention itself appended a new audit entry — it should be present.
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM activity_log")
+        .fetch_one(&h.pool).await.unwrap();
+    assert_eq!(after, 1, "only the retention-marker row should remain");
+}
+
+#[tokio::test]
+async fn admin_metrics_serves_prometheus_format() {
+    let h = Harness::boot().await;
+    let resp = h.get("/api/admin/metrics").await;
+    expect_ok(&resp);
+    assert!(resp.headers()[axum::http::header::CONTENT_TYPE]
+        .to_str()
+        .unwrap()
+        .starts_with("text/plain"));
+    let body = common::body_string(resp).await;
+    assert!(body.contains("racklog_uptime_seconds"));
+    assert!(body.contains("racklog_audit_chain_valid 1"));
+    assert!(body.contains("racklog_items_total"));
+    assert!(body.contains("# TYPE racklog_pool_size gauge"));
+}
+
+#[tokio::test]
+async fn admin_whoami_reports_auth_state() {
+    let h = Harness::boot().await; // no token
+    let body = json(h.get("/api/admin/whoami").await).await;
+    assert_eq!(body["auth_required"], false);
+    assert_eq!(body["authenticated"], false);
+    assert!(body["server_time"].is_string());
+}
+
+#[tokio::test]
+async fn admin_endpoints_protected_by_token() {
+    let h = Harness::boot_with(Some("s3cr3t".into()), true).await;
+    let blocked = h.get_unauthed("/api/admin/info").await;
+    expect_status(&blocked, StatusCode::UNAUTHORIZED);
+    let ok = h.get("/api/admin/info").await;
+    expect_ok(&ok);
+}
+
 // ---- search escape ------------------------------------------------------
 
 #[tokio::test]
