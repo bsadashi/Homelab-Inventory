@@ -378,6 +378,87 @@ async fn csv_export_neutralises_formula_injection() {
     );
 }
 
+// ---- CSV import (SKU bulk management) ----------------------------------
+
+#[tokio::test]
+async fn csv_import_creates_new_items() {
+    let h = Harness::boot_with(None, false).await; // empty DB
+    let csv = "sku,name,category,brand,cost,price,unit,min,max,qty,barcode\n\
+               IMP-001,Test A,Tools,Brand1,10,12,ea,1,5,3,123456789012\n\
+               IMP-002,Test B,Cables,Brand2,5,5,ea,5,10,7,";
+    let resp = h.post_csv("/api/exports/items.csv", csv).await;
+    expect_ok(&resp);
+    let body = json(resp).await;
+    assert_eq!(body["created"], 2);
+    assert_eq!(body["updated"], 0);
+    assert_eq!(body["errors"].as_array().unwrap().len(), 0);
+
+    // Confirm they're queryable.
+    let items = json(h.get("/api/items?q=IMP-").await).await;
+    assert_eq!(items.as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn csv_import_updates_existing_skus() {
+    let h = Harness::boot().await; // seeded
+    let csv = "sku,name,category,cost,price,qty\n\
+               NET-USW-PRO-24,UniFi Switch (updated),Networking,800,820,2\n";
+    let resp = h.post_csv("/api/exports/items.csv", csv).await;
+    expect_ok(&resp);
+    let body = json(resp).await;
+    assert_eq!(body["created"], 0);
+    assert_eq!(body["updated"], 1);
+
+    // Find the item and assert the new values stuck.
+    let items = json(h.get("/api/items?q=NET-USW-PRO-24").await).await;
+    let arr = items.as_array().unwrap();
+    let found = arr.iter().find(|i| i["sku"] == "NET-USW-PRO-24").unwrap();
+    assert_eq!(found["name"], "UniFi Switch (updated)");
+    assert_eq!(found["cost"], 800.0);
+    assert_eq!(found["qty"], 2);
+}
+
+#[tokio::test]
+async fn csv_import_reports_per_row_errors() {
+    let h = Harness::boot_with(None, false).await;
+    let csv = "sku,name\n\
+               GOOD-1,Valid item\n\
+               ,blank sku here\n\
+               GOOD-2,Another valid\n";
+    let body = json(h.post_csv("/api/exports/items.csv", csv).await).await;
+    assert_eq!(body["created"], 2, "good rows still committed");
+    let errors = body["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["line"], 3);
+}
+
+#[tokio::test]
+async fn csv_import_round_trip_via_export() {
+    // Export the seeded items, import them back into a fresh empty DB,
+    // and confirm we end up with the same SKU set. Exercises the CSV
+    // escape rules (quoted cells, special characters) end-to-end and
+    // the importer's tolerance for supplier references that don't yet
+    // exist on the destination side.
+    let exporter = Harness::boot().await;
+    let csv = common::body_string(exporter.get("/api/exports/items.csv").await).await;
+
+    let importer = Harness::boot_with(None, false).await;
+    let body = json(importer.post_csv("/api/exports/items.csv", &csv).await).await;
+    assert_eq!(body["created"], 36);
+    assert_eq!(body["errors"].as_array().unwrap().len(), 0);
+
+    let stats = json(importer.get("/api/stats").await).await;
+    assert_eq!(stats["totalSKUs"], 36);
+}
+
+#[tokio::test]
+async fn csv_import_rejects_missing_required_columns() {
+    let h = Harness::boot().await;
+    let csv = "name,cost\nNo SKU column,10\n";
+    let resp = h.post_csv("/api/exports/items.csv", csv).await;
+    expect_status(&resp, StatusCode::BAD_REQUEST);
+}
+
 // ---- SKU lookup --------------------------------------------------------
 
 mod sku_stub {

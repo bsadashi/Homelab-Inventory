@@ -101,6 +101,16 @@ impl Harness {
             .await
     }
 
+    pub async fn post_csv(&self, path: &str, csv: &str) -> Response<Body> {
+        self.send(Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::CONTENT_TYPE, "text/csv")
+            .body(Body::from(csv.to_string()))
+            .unwrap())
+            .await
+    }
+
     /// Like `get` but without the auth header, even when the harness has
     /// a token configured. Used for verifying the auth gate.
     pub async fn get_unauthed(&self, path: &str) -> Response<Body> {
