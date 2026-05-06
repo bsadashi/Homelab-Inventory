@@ -6,6 +6,7 @@ mod db;
 mod error;
 mod logging;
 mod models;
+mod seed;
 
 use crate::config::Config;
 
@@ -24,9 +25,21 @@ async fn main() -> anyhow::Result<()> {
     db::migrate(&pool).await?;
     tracing::info!("database ready, schema migrated");
 
+    if cfg.seed_on_empty {
+        match seed::seed_if_empty(&pool).await {
+            Ok(true) => tracing::info!("seeded initial homelab dataset"),
+            Ok(false) => tracing::info!("existing data found, skipping seed"),
+            Err(e) => tracing::error!(%e, "seed failed"),
+        }
+    }
+
     let chain = audit::verify_chain(&pool).await?;
     if chain.valid {
-        tracing::info!(entries = chain.entries, "audit chain verified");
+        tracing::info!(
+            entries = chain.entries,
+            head = ?chain.head,
+            "audit chain verified"
+        );
     } else {
         tracing::warn!(
             entries = chain.entries,
