@@ -11,6 +11,10 @@ publish = false
 name = "racklog"
 path = "src/main.rs"
 
+[lib]
+name = "racklog"
+path = "src/lib.rs"
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["macros", "tokio", "http2"] }
@@ -59,6 +63,11 @@ dotenvy = "0.15"
 
 # Static asset embedding for the dashboard UI
 mime_guess = "2"
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
 [profile.release]
 opt-level = 3

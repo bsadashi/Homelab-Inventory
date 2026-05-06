@@ -1,18 +1,6 @@
 //! RACKLOG — homelab inventory ops service entry point.
 
-mod audit;
-mod auth;
-mod config;
-mod db;
-mod error;
-mod logging;
-mod models;
-mod routes;
-mod seed;
-mod state;
-
-use crate::config::Config;
-use crate::state::AppState;
+use racklog::{audit, config::Config, db, logging, routes, seed, state::AppState};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::signal;
@@ -71,8 +59,6 @@ async fn main() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // Give in-flight queries a moment to finish, then close the pool cleanly
-    // so SQLite checkpoints the WAL on exit.
     tokio::time::timeout(Duration::from_secs(5), pool.close())
         .await
         .ok();

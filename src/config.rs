@@ -37,6 +37,25 @@ pub enum AllowOrigin {
 }
 
 impl Config {
+    /// Test-only constructor with in-memory-friendly defaults. Skips
+    /// dotenv and never reads the process environment so tests stay
+    /// hermetic and parallel-safe.
+    pub fn for_test(database_url: impl Into<String>, auth_token: Option<String>) -> Self {
+        Self {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            database_url: database_url.into(),
+            data_dir: PathBuf::from("./data"),
+            static_dir: None,
+            auth_token,
+            seed_on_empty: true,
+            request_timeout: Duration::from_secs(30),
+            max_body_bytes: 2 * 1024 * 1024,
+            log_format: LogFormat::Pretty,
+            allow_origin: AllowOrigin::SameOrigin,
+            trust_forwarded_headers: false,
+        }
+    }
+
     /// Build the runtime config from process environment variables. Missing
     /// values fall back to safe local-first defaults.
     pub fn from_env() -> Result<Self, ConfigError> {
