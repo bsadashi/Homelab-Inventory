@@ -245,6 +245,40 @@ async fn index_serves_html_with_bootstrap_injection() {
 }
 
 #[tokio::test]
+async fn bootstrap_injection_neutralises_stored_xss() {
+    // Create an item whose name contains the literal closing-tag plus a
+    // hostile <img> — a textbook stored-XSS vector when JSON is splatted
+    // into a <script> tag without HTML-safe escaping. The rendered index
+    // must NOT contain the unescaped sequence.
+    let h = Harness::boot().await;
+    let create = h
+        .post_json(
+            "/api/items",
+            &serde_json::json!({
+                "id": "I-XSS-001",
+                "sku": "XSS-EVIL",
+                "name": "</script><img src=x onerror=alert(1)>",
+                "cat": "Tools",
+                "qty": 1,
+                "loc": []
+            }),
+        )
+        .await;
+    expect_status(&create, StatusCode::CREATED);
+
+    let html = common::body_string(h.get("/").await).await;
+    assert!(
+        !html.contains("</script><img src=x onerror=alert(1)>"),
+        "bootstrap injection leaked an unescaped </script> sequence — XSS regression!"
+    );
+    // The escaped form must appear in the snapshot.
+    assert!(
+        html.contains("\\u003c/script\\u003e") || html.contains("\\u003c/script>"),
+        "expected JSON-escaped < in the bootstrap payload"
+    );
+}
+
+#[tokio::test]
 async fn embedded_static_assets_are_reachable() {
     let h = Harness::boot().await;
     let resp = h.get("/styles.css").await;

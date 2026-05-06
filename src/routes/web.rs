@@ -73,9 +73,38 @@ async fn render_index(state: &AppState) -> ApiResult<String> {
     let payload = serde_json::to_string(&snapshot)?;
     let injection = format!(
         r#"<script>window.__RACKLOG_BOOTSTRAP__ = {};</script>"#,
-        payload
+        html_safe_json(&payload)
     );
     Ok(template.replace("<!-- RACKLOG_BOOTSTRAP -->", &injection))
+}
+
+/// Make a JSON string safe to embed inside an HTML `<script>` tag.
+///
+/// `serde_json::to_string` does not escape `<`, `>`, `&`, U+2028 or
+/// U+2029, so a value like `"</script><img src=x onerror=alert(1)>"`
+/// would close the script tag and execute attacker-supplied HTML —
+/// a classic stored XSS via JSON-in-script-tag injection.
+///
+/// We swap each of these for an equivalent JSON unicode escape (which
+/// `JSON.parse` decodes back to the original character on the client),
+/// preserving payload fidelity while making the literal sequence
+/// `</script>` impossible to write inside the tag.
+fn html_safe_json(json: &str) -> String {
+    // Each replacement is a valid JSON unicode escape;
+    // `JSON.parse` on the client decodes them back to the original
+    // character so payload fidelity is preserved.
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        match c {
+            '<' => out.push_str("\\u003c"),
+            '>' => out.push_str("\\u003e"),
+            '&' => out.push_str("\\u0026"),
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 fn load_template(state: &AppState) -> std::io::Result<String> {
