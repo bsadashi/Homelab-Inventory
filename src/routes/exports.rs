@@ -336,7 +336,9 @@ async fn upsert_one(
         }).await?;
         created = false;
     } else {
-        let id = format!("I-{}", uuid::Uuid::new_v4().simple().to_string()[..8].to_string());
+        // Full UUID (122 bits of entropy) — see items::create for
+        // the rationale on dropping the 8-char truncation.
+        let id = format!("I-{}", uuid::Uuid::new_v4().simple());
         sqlx::query(
             r#"INSERT INTO items
                (id, sku, name, category, brand, supplier_id, cost, price, unit,

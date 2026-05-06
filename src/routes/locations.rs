@@ -188,8 +188,11 @@ async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Full v4 UUID (32 hex chars). Previously truncated to 8 chars,
+/// giving only 32 bits of entropy — birthday collisions begin around
+/// 64 K rows. The full UUID has 122 bits.
 fn short_id() -> String {
-    Uuid::new_v4().simple().to_string()[..8].to_string()
+    Uuid::new_v4().simple().to_string()
 }
 
 fn map_unique(e: sqlx::Error) -> ApiError {

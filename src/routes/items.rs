@@ -99,10 +99,13 @@ async fn create(
     Json(input): Json<ItemInput>,
 ) -> ApiResult<(StatusCode, Json<Item>)> {
     validate(&input)?;
+    // Full UUID (32 hex chars) instead of an 8-char truncation —
+    // 32-bit truncation gave only ~64 K headroom before birthday
+    // collisions; the full v4 UUID has 122 bits of entropy.
     let id = input
         .id
         .clone()
-        .unwrap_or_else(|| format!("I-{}", uuid::Uuid::new_v4().simple().to_string()[..8].to_string()));
+        .unwrap_or_else(|| format!("I-{}", uuid::Uuid::new_v4().simple()));
 
     let mut tx = state.pool.begin().await?;
     insert_item(&mut tx, &id, &input).await?;

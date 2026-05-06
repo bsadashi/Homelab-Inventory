@@ -183,8 +183,10 @@ fn row_to_supplier(r: sqlx::sqlite::SqliteRow) -> Supplier {
     }
 }
 
+/// Full v4 UUID (32 hex chars). See locations::short_id for
+/// the rationale on dropping the 8-char truncation.
 fn short_id() -> String {
-    Uuid::new_v4().simple().to_string()[..8].to_string()
+    Uuid::new_v4().simple().to_string()
 }
 
 fn map_unique(e: sqlx::Error) -> ApiError {
