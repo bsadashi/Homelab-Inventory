@@ -43,7 +43,7 @@ impl Provider for UpcItemDb {
     fn name(&self) -> &'static str { "upcitemdb" }
 
     async fn lookup(&self, barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
-        validate_barcode(barcode)?;
+        let barcode = validate_barcode(barcode)?;
         let url = format!("{}?upc={}", self.base, barcode);
         let resp = http()?.get(&url).send().await?;
 

@@ -570,6 +570,29 @@ async fn lookup_returns_empty_when_no_provider_and_no_local() {
     assert!(body["providers_tried"].as_array().unwrap().is_empty());
 }
 
+// ---- search escape ------------------------------------------------------
+
+#[tokio::test]
+async fn item_search_escapes_like_wildcards() {
+    // Two items: one whose name contains a literal '%', one that doesn't
+    // but would match if '%' were treated as a wildcard.
+    let h = Harness::boot_with(None, false).await;
+    sqlx::query("INSERT INTO items (id, sku, name, category) VALUES (?, ?, ?, 'Tools')")
+        .bind("I-PCT").bind("PCT").bind("Off 100% widget")
+        .execute(&h.pool).await.unwrap();
+    sqlx::query("INSERT INTO items (id, sku, name, category) VALUES (?, ?, ?, 'Tools')")
+        .bind("I-NO").bind("NO").bind("Off 100 widget")
+        .execute(&h.pool).await.unwrap();
+
+    // Searching for the literal `100%` must match only the row that
+    // actually has '%' in its name. Without escaping, the '%' acts as
+    // a wildcard and both rows would match.
+    let body = json(h.get("/api/items?q=100%25").await).await;
+    let arr = body.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "literal `%` should match only the row containing it");
+    assert_eq!(arr[0]["id"], "I-PCT");
+}
+
 // ---- IN-clause chunking regression -------------------------------------
 
 #[tokio::test]

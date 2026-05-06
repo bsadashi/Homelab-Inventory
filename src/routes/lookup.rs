@@ -43,16 +43,19 @@ async fn lookup(
     State(state): State<AppState>,
     Path(barcode): Path<String>,
 ) -> ApiResult<Json<LookupResponse>> {
-    if validate_barcode(&barcode).is_err() {
-        return Err(ApiError::BadRequest(
+    // Validate AND canonicalise so SQL bind and provider URLs all
+    // see the same trimmed form.
+    let canonical = validate_barcode(&barcode).map_err(|_| {
+        ApiError::BadRequest(
             "barcode must be 1–32 chars, alphanumeric/_/- only".into(),
-        ));
-    }
+        )
+    })?;
+    let canonical = canonical.to_string();
 
     // Local first — most barcodes will already exist in the catalog.
     let local: Option<String> =
         sqlx::query("SELECT id FROM items WHERE barcode = ? LIMIT 1")
-            .bind(&barcode)
+            .bind(&canonical)
             .fetch_optional(&state.pool)
             .await?
             .map(|r| r.get::<String, _>("id"));
@@ -63,21 +66,21 @@ async fn lookup(
     let external = if state.providers.is_empty() {
         Vec::new()
     } else {
-        match lookup_chain(&state.providers, &barcode).await {
+        match lookup_chain(&state.providers, &canonical).await {
             Ok(hits) => hits,
             Err(LookupError::NoProvider) => Vec::new(),
             Err(LookupError::InvalidBarcode) => {
                 return Err(ApiError::BadRequest("invalid barcode".into()))
             }
             Err(e) => {
-                tracing::warn!(%e, %barcode, "external lookup failed");
+                tracing::warn!(%e, barcode = %canonical, "external lookup failed");
                 Vec::new()
             }
         }
     };
 
     Ok(Json(LookupResponse {
-        barcode,
+        barcode: canonical,
         local_item_id: local,
         external,
         providers_tried,

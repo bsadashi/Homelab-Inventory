@@ -48,7 +48,13 @@ async fn list(
     if filter.category.is_some() { sql.push_str(" AND category = ?"); }
     if filter.supplier.is_some() { sql.push_str(" AND supplier_id = ?"); }
     if filter.barcode.is_some()  { sql.push_str(" AND barcode = ?"); }
-    if filter.q.is_some()        { sql.push_str(" AND (sku LIKE ? OR name LIKE ?)"); }
+    // ESCAPE clause lets the user search for literal `%` and `_`
+    // without those characters acting as wildcards.
+    if filter.q.is_some() {
+        sql.push_str(
+            " AND (sku LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')",
+        );
+    }
     sql.push_str(" ORDER BY sku LIMIT ? OFFSET ?");
 
     let mut q = sqlx::query(&sql);
@@ -56,7 +62,7 @@ async fn list(
     if let Some(v) = &filter.supplier { q = q.bind(v); }
     if let Some(v) = &filter.barcode  { q = q.bind(v); }
     if let Some(v) = &filter.q {
-        let pat = format!("%{}%", v);
+        let pat = format!("%{}%", escape_like(v));
         q = q.bind(pat.clone()).bind(pat);
     }
     q = q.bind(limit).bind(offset);
@@ -422,5 +428,41 @@ fn map_unique(e: sqlx::Error) -> ApiError {
             ApiError::Conflict("sku already exists".into())
         }
         other => ApiError::Database(other),
+    }
+}
+
+/// Escape SQL LIKE wildcards in a user-supplied search term so a query
+/// for `100%` matches the literal string `100%`, not "anything starting
+/// with 100". Used in conjunction with `ESCAPE '\\'`.
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '%' || c == '_' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_like;
+
+    #[test]
+    fn literal_percent_escaped() {
+        assert_eq!(escape_like("100%"), "100\\%");
+    }
+    #[test]
+    fn literal_underscore_escaped() {
+        assert_eq!(escape_like("a_b"), "a\\_b");
+    }
+    #[test]
+    fn literal_backslash_escaped() {
+        assert_eq!(escape_like("a\\b"), "a\\\\b");
+    }
+    #[test]
+    fn plain_term_passes_through() {
+        assert_eq!(escape_like("widget"), "widget");
     }
 }

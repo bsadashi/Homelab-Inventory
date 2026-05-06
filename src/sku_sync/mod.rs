@@ -161,9 +161,14 @@ fn http() -> Result<&'static reqwest::Client, LookupError> {
     Ok(CLIENT.get_or_init(|| new))
 }
 
-/// Reject obvious junk before we make any network call. Keeps log
-/// noise low and stops a hostile barcode from probing the URL space.
-pub fn validate_barcode(s: &str) -> Result<(), LookupError> {
+/// Reject obvious junk before we make any network call, and return
+/// the canonical (whitespace-stripped) form so subsequent lookups
+/// (URL building, SQL bind) all work with the same string. The
+/// previous formulation validated the trimmed value but the caller
+/// then used the raw input — so a barcode like `"  123  "` passed
+/// validation while the local SQL `WHERE barcode = ?` still missed
+/// because it was bound with the surrounding whitespace.
+pub fn validate_barcode(s: &str) -> Result<&str, LookupError> {
     let trimmed = s.trim();
     if trimmed.is_empty() || trimmed.len() > 32 {
         return Err(LookupError::InvalidBarcode);
@@ -175,5 +180,33 @@ pub fn validate_barcode(s: &str) -> Result<(), LookupError> {
     {
         return Err(LookupError::InvalidBarcode);
     }
-    Ok(())
+    Ok(trimmed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_barcode;
+
+    #[test]
+    fn returns_trimmed_form() {
+        assert_eq!(validate_barcode("  123  ").unwrap(), "123");
+    }
+    #[test]
+    fn empty_after_trim_rejected() {
+        assert!(validate_barcode("    ").is_err());
+    }
+    #[test]
+    fn too_long_rejected() {
+        assert!(validate_barcode(&"a".repeat(33)).is_err());
+    }
+    #[test]
+    fn special_chars_rejected() {
+        assert!(validate_barcode("abc/def").is_err());
+        assert!(validate_barcode("abc def").is_err());
+        assert!(validate_barcode("abc\u{0000}").is_err());
+    }
+    #[test]
+    fn allowed_alphabet() {
+        assert!(validate_barcode("ABC-123_xyz").is_ok());
+    }
 }

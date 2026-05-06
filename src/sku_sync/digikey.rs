@@ -136,7 +136,7 @@ impl Provider for DigiKey {
     fn name(&self) -> &'static str { "digikey" }
 
     async fn lookup(&self, barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
-        validate_barcode(barcode)?;
+        let barcode = validate_barcode(barcode)?;
         // First attempt with the cached token. On 401 we drop the
         // cache and retry exactly once with a freshly-minted token —
         // this hides routine token expiry from the caller. A second
