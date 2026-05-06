@@ -4,6 +4,7 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Resolved server configuration.
@@ -13,7 +14,9 @@ pub struct Config {
     pub database_url: String,
     pub data_dir: PathBuf,
     pub static_dir: Option<PathBuf>,
-    pub auth_token: Option<String>,
+    /// Wrapped in `Arc` so cloning the config (cheaply, on every
+    /// request via `AppState`) doesn't copy the token bytes.
+    pub auth_token: Option<Arc<String>>,
     pub seed_on_empty: bool,
     pub request_timeout: Duration,
     pub max_body_bytes: usize,
@@ -46,7 +49,7 @@ impl Config {
             database_url: database_url.into(),
             data_dir: PathBuf::from("./data"),
             static_dir: None,
-            auth_token,
+            auth_token: auth_token.map(Arc::new),
             seed_on_empty: true,
             request_timeout: Duration::from_secs(30),
             max_body_bytes: 2 * 1024 * 1024,
@@ -84,7 +87,8 @@ impl Config {
 
         let auth_token = std::env::var("RACKLOG_AUTH_TOKEN")
             .ok()
-            .filter(|v| !v.is_empty());
+            .filter(|v| !v.is_empty())
+            .map(Arc::new);
 
         let seed_on_empty = parse_bool("RACKLOG_SEED_ON_EMPTY", true);
 

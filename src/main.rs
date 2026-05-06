@@ -72,11 +72,19 @@ async fn shutdown_signal() {
     };
     #[cfg(unix)]
     let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .ok()
-            .map(|mut s| async move { s.recv().await })
-            .unwrap()
-            .await;
+        // If signal registration ever fails (rare; e.g. inside a
+        // restricted sandbox where SIGTERM is preempted), fall back
+        // to ctrl_c-only by parking forever — never panic the
+        // shutdown future itself.
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(e) => {
+                tracing::warn!(%e, "SIGTERM handler unavailable, ctrl-c only");
+                std::future::pending::<()>().await;
+            }
+        }
     };
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();

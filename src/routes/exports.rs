@@ -455,6 +455,40 @@ fn escape(value: &str) -> String {
 }
 
 #[cfg(test)]
+mod parser_tests {
+    use super::parse_csv_row;
+
+    #[test]
+    fn plain_row() {
+        assert_eq!(parse_csv_row("a,b,c"), vec!["a", "b", "c"]);
+    }
+    #[test]
+    fn empty_cells_preserved() {
+        assert_eq!(parse_csv_row("a,,c"), vec!["a", "", "c"]);
+    }
+    #[test]
+    fn trailing_empty_cell_preserved() {
+        assert_eq!(parse_csv_row("a,b,"), vec!["a", "b", ""]);
+    }
+    #[test]
+    fn quoted_cell_with_comma() {
+        assert_eq!(parse_csv_row(r#"a,"b,c",d"#), vec!["a", "b,c", "d"]);
+    }
+    #[test]
+    fn doubled_quote_inside_quoted_cell() {
+        assert_eq!(parse_csv_row(r#""he said ""hi""""#), vec![r#"he said "hi""#]);
+    }
+    #[test]
+    fn quote_only_inside_already_quoted() {
+        assert_eq!(parse_csv_row(r#"abc,"de"f""#), vec!["abc", r#"def""#]);
+    }
+    #[test]
+    fn empty_string_yields_one_empty_cell() {
+        assert_eq!(parse_csv_row(""), vec![""]);
+    }
+}
+
+#[cfg(test)]
 mod escape_tests {
     use super::escape;
 

@@ -22,6 +22,8 @@ pub async fn require_token(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Token lives in an Arc<String> so every request only clones the
+    // pointer, not the bytes — matters when the token is long.
     let Some(expected) = state.cfg.auth_token.clone() else {
         return Ok(next.run(request).await);
     };
@@ -35,11 +37,29 @@ pub async fn require_token(
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
 
-    let presented = header.strip_prefix("Bearer ").unwrap_or("").trim();
-    if !constant_time_equal(presented.as_bytes(), expected.as_bytes()) {
+    let presented = strip_bearer_scheme(header).trim();
+    if !constant_time_equal(presented.as_bytes(), expected.as_str().as_bytes()) {
         return Err(StatusCode::UNAUTHORIZED);
     }
     Ok(next.run(request).await)
+}
+
+/// RFC 6750: the `Bearer` scheme name is case-insensitive. Match
+/// any case so clients sending `bearer ` or `BEARER ` still work.
+fn strip_bearer_scheme(header: &str) -> &str {
+    if header.len() < 7 {
+        return "";
+    }
+    let (scheme, rest) = header.split_at(6);
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return "";
+    }
+    // Require a separator after the scheme name.
+    let rest_chars = rest.chars().next();
+    if !matches!(rest_chars, Some(' ') | Some('\t')) {
+        return "";
+    }
+    &rest[1..]
 }
 
 fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
@@ -49,4 +69,35 @@ fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
         return false;
     }
     bool::from(subtle::ConstantTimeEq::ct_eq(a, b))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_bearer_scheme;
+
+    #[test]
+    fn strips_canonical_bearer() {
+        assert_eq!(strip_bearer_scheme("Bearer abc"), "abc");
+    }
+    #[test]
+    fn strips_lowercase_bearer() {
+        assert_eq!(strip_bearer_scheme("bearer abc"), "abc");
+    }
+    #[test]
+    fn strips_uppercase_bearer() {
+        assert_eq!(strip_bearer_scheme("BEARER abc"), "abc");
+    }
+    #[test]
+    fn rejects_other_schemes() {
+        assert_eq!(strip_bearer_scheme("Basic abc"), "");
+    }
+    #[test]
+    fn requires_separator() {
+        assert_eq!(strip_bearer_scheme("BearerNoSpace"), "");
+    }
+    #[test]
+    fn handles_short_strings() {
+        assert_eq!(strip_bearer_scheme(""), "");
+        assert_eq!(strip_bearer_scheme("Bear"), "");
+    }
 }
