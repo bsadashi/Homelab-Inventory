@@ -313,7 +313,7 @@ async fn read_counts(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Count>> {
 async fn read_status(pool: &sqlx::SqlitePool) -> ApiResult<StatusSummary> {
     let total_skus: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items").fetch_one(pool).await?;
     let total_units: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(qty), 0) FROM items").fetch_one(pool).await?;
-    let total_value: f64 = sqlx::query_scalar("SELECT COALESCE(SUM(qty * cost), 0) FROM items").fetch_one(pool).await?;
+    let total_value: f64 = sqlx::query_scalar("SELECT CAST(COALESCE(SUM(qty * cost), 0) AS REAL) FROM items").fetch_one(pool).await?;
     let low_stock: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty > 0 AND qty < min_qty").fetch_one(pool).await?;
     let out_of_stock: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty = 0").fetch_one(pool).await?;
     let serialized_units: i64 = sqlx::query_scalar(

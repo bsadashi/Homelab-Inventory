@@ -12,7 +12,10 @@ use axum::http::{header, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 
-const PUBLIC_PATHS: &[&str] = &["/api/healthz", "/api/readyz"];
+// Both the nested form (/api/healthz) and the post-nest path the
+// middleware actually sees (/healthz). Listing both shields us against
+// future refactors that move the middleware up or down a layer.
+const PUBLIC_PATHS: &[&str] = &["/api/healthz", "/api/readyz", "/healthz", "/readyz"];
 
 pub async fn require_token(
     State(state): State<AppState>,

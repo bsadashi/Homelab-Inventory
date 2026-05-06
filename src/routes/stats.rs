@@ -18,8 +18,10 @@ async fn summary(State(state): State<AppState>) -> ApiResult<Json<StatusSummary>
     let total_units: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(qty), 0) FROM items")
         .fetch_one(&state.pool)
         .await?;
+    // Force REAL so sqlx never tries to decode INTEGER 0 as f64 on an
+    // empty table.
     let total_value: f64 =
-        sqlx::query_scalar("SELECT COALESCE(SUM(qty * cost), 0) FROM items")
+        sqlx::query_scalar("SELECT CAST(COALESCE(SUM(qty * cost), 0) AS REAL) FROM items")
             .fetch_one(&state.pool)
             .await?;
     let low_stock: i64 = sqlx::query_scalar(
