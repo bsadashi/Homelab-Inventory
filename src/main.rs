@@ -1,6 +1,7 @@
 //! RACKLOG — homelab inventory ops service entry point.
 
 mod audit;
+mod auth;
 mod config;
 mod db;
 mod error;
