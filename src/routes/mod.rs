@@ -3,6 +3,7 @@
 
 pub mod activity;
 pub mod admin;
+pub mod auth;
 pub mod bootstrap;
 pub mod counts;
 pub mod exports;
@@ -17,7 +18,7 @@ pub mod suppliers;
 pub mod transfers;
 pub mod web;
 
-use crate::auth;
+use crate::auth as crate_auth;
 use crate::config::AllowOrigin;
 use crate::state::AppState;
 use axum::http::{header, HeaderName, HeaderValue, Method};
@@ -31,7 +32,7 @@ pub fn build(state: AppState) -> Router {
     let api = api_routes()
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            auth::require_auth,
+            crate_auth::require_auth,
         ))
         .layer(cors);
 
@@ -75,6 +76,7 @@ pub fn serve(state: AppState) -> Router {
 fn api_routes() -> Router<AppState> {
     Router::new()
         .merge(health::router())
+        .nest("/auth",      auth::router())
         .nest("/bootstrap", bootstrap::router())
         .nest("/items",     items::router())
         .nest("/locations", locations::router())
