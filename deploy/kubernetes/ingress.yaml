@@ -1,0 +1,31 @@
+# Optional. Adjust ingressClassName and host to match your cluster.
+# Most homelabs put RACKLOG behind their existing reverse proxy and
+# can skip this file entirely.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: racklog
+  namespace: racklog
+  labels:
+    app.kubernetes.io/name: racklog
+  annotations:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  # tls:
+  #   - hosts:
+  #       - racklog.example.com
+  #     secretName: racklog-tls
+  rules:
+    - host: racklog.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: racklog
+                port:
+                  number: 80

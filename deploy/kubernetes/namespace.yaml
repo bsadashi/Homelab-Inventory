@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: racklog
+  labels:
+    app.kubernetes.io/name: racklog
+    app.kubernetes.io/part-of: homelab-inventory

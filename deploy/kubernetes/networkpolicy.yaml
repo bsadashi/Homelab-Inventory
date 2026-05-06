@@ -1,0 +1,37 @@
+# Default-deny network policy with explicit allows. Drop this in if your
+# cluster runs a NetworkPolicy-aware CNI (Cilium, Calico, etc.). Without
+# such a CNI it is a no-op.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: racklog
+  namespace: racklog
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: racklog
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from same namespace (e.g. Ingress controller) on the
+    # service port. Tighten to specific labels in production.
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # DNS only — RACKLOG does not phone home or fetch external resources
+    # at runtime. The browser fetches Google Fonts / unpkg directly from
+    # the user's machine, not through this pod.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

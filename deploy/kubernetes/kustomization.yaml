@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: racklog
+
+# Default bundle. Drop ingress.yaml or networkpolicy.yaml from `resources`
+# if your cluster doesn't need them; copy this file into an overlay and
+# patch the image tag for prod.
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  # - secret.example.yaml      # rename + edit before applying
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  # - ingress.yaml             # uncomment after editing the host
+  # - networkpolicy.yaml       # only if your CNI enforces NetworkPolicy
+
+commonLabels:
+  app.kubernetes.io/name: racklog
+  app.kubernetes.io/part-of: homelab-inventory
+
+images:
+  - name: ghcr.io/bsadashi/racklog
+    newTag: latest

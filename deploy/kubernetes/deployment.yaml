@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: racklog
+  namespace: racklog
+  labels:
+    app.kubernetes.io/name: racklog
+    app.kubernetes.io/component: backend
+spec:
+  # SQLite-backed deployments must stay at 1 replica because the
+  # database file is owned by a single PVC. Switch the DATABASE_URL to
+  # Postgres before scaling out — the Rust service is otherwise
+  # stateless and safe to run as multiple replicas behind the Service.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: racklog
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: racklog
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: default
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: racklog
+          image: ghcr.io/bsadashi/racklog:latest    # replace with your registry path
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: racklog-config
+            - secretRef:
+                name: racklog-secret
+                optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "1000m"
+              memory: "256Mi"
+          startupProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /api/readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: racklog-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+      terminationGracePeriodSeconds: 30
