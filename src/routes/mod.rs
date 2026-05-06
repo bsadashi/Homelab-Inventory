@@ -8,6 +8,7 @@ pub mod exports;
 pub mod health;
 pub mod items;
 pub mod locations;
+pub mod lookup;
 pub mod purchase_orders;
 pub mod sales_orders;
 pub mod stats;
@@ -71,6 +72,7 @@ fn api_routes() -> Router<AppState> {
         .nest("/activity",  activity::router())
         .nest("/stats",     stats::router())
         .nest("/exports",   exports::router())
+        .nest("/lookup",    lookup::router())
 }
 
 /// Default-deny CORS. Set `RACKLOG_ALLOW_ORIGIN=https://...,https://...`

@@ -378,6 +378,83 @@ async fn csv_export_neutralises_formula_injection() {
     );
 }
 
+// ---- SKU lookup --------------------------------------------------------
+
+mod sku_stub {
+    use racklog::sku_sync::{LookupError, LookupResult, Provider};
+
+    pub struct StubProvider {
+        pub name: &'static str,
+        pub returns: Vec<LookupResult>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for StubProvider {
+        fn name(&self) -> &'static str { self.name }
+        async fn lookup(&self, _barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
+            Ok(self.returns.clone())
+        }
+    }
+}
+
+#[tokio::test]
+async fn lookup_finds_local_match() {
+    let h = Harness::boot().await;
+    let body = json(h.get("/api/lookup/810010071316").await).await;
+    assert_eq!(body["barcode"], "810010071316");
+    // I001 is the seeded UniFi switch with that barcode.
+    assert_eq!(body["local_item_id"], "I001");
+}
+
+#[tokio::test]
+async fn lookup_falls_back_to_external_provider() {
+    use racklog::sku_sync::LookupResult;
+    let mut hit = LookupResult::new("stub", "999999999999");
+    hit.name = Some("Mystery Widget".into());
+    hit.brand = Some("Stub Co".into());
+    let providers: Vec<Box<dyn racklog::sku_sync::Provider>> = vec![Box::new(
+        sku_stub::StubProvider {
+            name: "stub",
+            returns: vec![hit],
+        },
+    )];
+    let h = Harness::boot_with_providers(providers).await;
+
+    let body = json(h.get("/api/lookup/999999999999").await).await;
+    assert!(
+        body["local_item_id"].is_null(),
+        "no local match for unknown barcode"
+    );
+    let ext = body["external"].as_array().unwrap();
+    assert_eq!(ext.len(), 1);
+    assert_eq!(ext[0]["source"], "stub");
+    assert_eq!(ext[0]["name"], "Mystery Widget");
+
+    let providers_endpoint = json(h.get("/api/lookup/providers").await).await;
+    assert_eq!(
+        providers_endpoint["providers"].as_array().unwrap()[0],
+        "stub"
+    );
+}
+
+#[tokio::test]
+async fn lookup_rejects_invalid_barcodes() {
+    let h = Harness::boot().await;
+    // Whitespace + special chars are forbidden — the validator runs
+    // before any network call so injection attempts can't escape.
+    let resp = h.get("/api/lookup/%20bad%20%2F..").await;
+    expect_status(&resp, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn lookup_returns_empty_when_no_provider_and_no_local() {
+    let h = Harness::boot().await; // no external providers configured
+    let body = json(h.get("/api/lookup/000000000000").await).await;
+    assert!(body["local_item_id"].is_null());
+    assert!(body["external"].as_array().unwrap().is_empty());
+    assert!(body["providers_tried"].as_array().unwrap().is_empty());
+}
+
 // ---- aggregate stats ---------------------------------------------------
 
 #[tokio::test]

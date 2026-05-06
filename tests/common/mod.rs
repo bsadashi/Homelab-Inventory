@@ -10,6 +10,8 @@ use serde_json::Value;
 use tempfile::TempDir;
 use tower::util::ServiceExt;
 
+use racklog::sku_sync::Provider as SkuProvider;
+
 pub struct Harness {
     pub router: Router,
     pub pool: sqlx::SqlitePool,
@@ -24,6 +26,18 @@ impl Harness {
     }
 
     pub async fn boot_with(token: Option<String>, seed_on_empty: bool) -> Self {
+        Self::boot_full(token, seed_on_empty, Vec::new()).await
+    }
+
+    pub async fn boot_with_providers(providers: Vec<Box<dyn SkuProvider>>) -> Self {
+        Self::boot_full(None, true, providers).await
+    }
+
+    async fn boot_full(
+        token: Option<String>,
+        seed_on_empty: bool,
+        providers: Vec<Box<dyn SkuProvider>>,
+    ) -> Self {
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut db_path = tmp.path().to_path_buf();
         db_path.push("racklog-test.db");
@@ -38,7 +52,7 @@ impl Harness {
             seed::seed_if_empty(&pool).await.expect("seed");
         }
 
-        let state = AppState::new(pool.clone(), cfg);
+        let state = AppState::with_providers(pool.clone(), cfg, providers);
         let router = routes::build(state);
         Self {
             router,
