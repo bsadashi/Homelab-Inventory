@@ -275,7 +275,7 @@ async fn write_stock<'a>(
             .serial
             .as_ref()
             .map(|s| serde_json::to_string(s).unwrap_or_default());
-        sqlx::query(
+        let res = sqlx::query(
             "INSERT INTO item_stock (item_id, location_id, bin, qty, serials)
              VALUES (?, ?, ?, ?, ?)",
         )
@@ -285,7 +285,18 @@ async fn write_stock<'a>(
         .bind(line.q)
         .bind(serials)
         .execute(&mut **tx)
-        .await?;
+        .await;
+        // Two concurrent inserts to the same (item_id, location_id, bin)
+        // would otherwise surface as a generic 500 thanks to the unique
+        // index on item_stock. Map it to a clean 409.
+        if let Err(sqlx::Error::Database(db)) = &res {
+            if db.is_unique_violation() {
+                return Err(ApiError::Conflict(
+                    "another stock line for this bin already exists".into(),
+                ));
+            }
+        }
+        let _ = res?;
     }
     Ok(())
 }
