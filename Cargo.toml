@@ -1,0 +1,72 @@
+[package]
+name = "racklog"
+version = "0.1.0"
+edition = "2021"
+authors = ["RACKLOG Contributors"]
+description = "RACKLOG · privacy-focused homelab inventory backend"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "racklog"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros", "tokio", "http2"] }
+tower = { version = "0.5", features = ["timeout", "limit"] }
+tower-http = { version = "0.5", features = [
+    "fs", "cors", "trace", "compression-gzip", "set-header",
+    "request-id", "timeout", "limit", "sensitive-headers"
+] }
+hyper = { version = "1", features = ["full"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Database (SQLite default; swap DATABASE_URL for Postgres after enabling the
+# `postgres` feature on sqlx — kept opt-in to keep the default image small)
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "json"
+] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Time
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+
+# Crypto / hashing for the audit chain
+sha2 = "0.10"
+hex = "0.4"
+subtle = "2"
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Config
+dotenvy = "0.15"
+
+# Static asset embedding for the dashboard UI
+mime_guess = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = 1
