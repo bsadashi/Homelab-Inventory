@@ -4,6 +4,7 @@ mod config;
 mod db;
 mod error;
 mod logging;
+mod models;
 
 use crate::config::Config;
 
@@ -22,8 +23,6 @@ async fn main() -> anyhow::Result<()> {
     db::migrate(&pool).await?;
     tracing::info!("database ready, schema migrated");
 
-    // HTTP server lands in the next commit. Closing the pool cleanly on
-    // exit keeps the journal in good shape for the next boot.
     pool.close().await;
     Ok(())
 }
