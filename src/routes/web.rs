@@ -32,6 +32,7 @@ macro_rules! embed {
 
 const EMBEDDED_ASSETS: &[(&str, &[u8])] = embed![
     "styles.css",
+    "api.js",
     "icons.jsx",
     "tweaks-panel.jsx",
     "widgets.jsx",
