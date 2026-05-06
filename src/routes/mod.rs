@@ -3,6 +3,7 @@
 
 pub mod activity;
 pub mod admin;
+pub mod admin_users;
 pub mod auth;
 pub mod bootstrap;
 pub mod counts;
@@ -89,7 +90,7 @@ fn api_routes() -> Router<AppState> {
         .nest("/stats",     stats::router())
         .nest("/exports",   exports::router())
         .nest("/lookup",    lookup::router())
-        .nest("/admin",     admin::router())
+        .nest("/admin",     admin::router().merge(admin_users::router()))
 }
 
 /// Default-deny CORS. Set `RACKLOG_ALLOW_ORIGIN=https://...,https://...`
