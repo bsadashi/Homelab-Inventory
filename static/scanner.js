@@ -306,8 +306,10 @@
           cat: (hit && hit.category) || 'Spare parts',
           brand: brand || null,
           barcode,
-          cost: (hit && hit.price) || 0,
-          price: (hit && hit.price) || 0,
+          // Don't fabricate a $0 cost when the lookup didn't return
+          // one — that silently misleads inventory valuations.
+          cost: (hit && typeof hit.price === 'number') ? hit.price : null,
+          price: (hit && typeof hit.price === 'number') ? hit.price : null,
           unit: 'ea',
           min: 0,
           max: 0,
@@ -318,11 +320,16 @@
           img: null,
         };
         const created = await window.RL.api.post('/api/items', payload);
-        toast(`Created ${created.id}`);
+        toast(`Created ${created.id} · reloading…`);
         close();
-        if (window.__inv && window.__inv.openItem) {
-          window.__inv.openItem(created.id);
-        }
+        // The React views aren't reactive to window.ITEMS changes —
+        // they read the global once at mount and never re-read it.
+        // Reload is the simplest reliable way to surface the new
+        // item in every view (catalog, dashboard counts, drawer).
+        // Drop a marker so the page can re-open the drawer if we
+        // teach app.jsx to read it (cheap, fail-safe if it doesn't).
+        try { sessionStorage.setItem('racklog.openAfterReload', created.id); } catch (_) {}
+        setTimeout(() => location.reload(), 250);
       } catch (e) {
         toast(`Import failed: ${e.message || e}`, 'ERR', 'warn');
       }

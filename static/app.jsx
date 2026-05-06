@@ -140,7 +140,16 @@ function App() {
               <input placeholder="Search items, SKUs, locations…  ⌘K" readOnly />
               <span className="kbd">⌘K</span>
             </div>
-            <button className="btn sm" onClick={() => setScannerOpen(true)}><I.scan /> Scan <span className="kbd">S</span></button>
+            <button className="btn sm" onClick={() => {
+              // Prefer the real camera scanner when api.js + scanner.js
+              // have loaded; fall back to the prototype's animated mock
+              // (still useful for demo / no-camera contexts).
+              if (window.RL && window.RL.scanner && window.RL.scanner.open) {
+                window.RL.scanner.open();
+              } else {
+                setScannerOpen(true);
+              }
+            }}><I.scan /> Scan <span className="kbd">S</span></button>
             <button className="btn icon ghost" title="Notifications" onClick={() => toast('3 low stock alerts · 1 PO arrives today', { tag: 'NOTIFY', variant: 'warn' })}>
               <I.bell />
             </button>

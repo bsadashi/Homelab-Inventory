@@ -34,6 +34,7 @@ const EMBEDDED_ASSETS: &[(&str, &[u8])] = embed![
     "styles.css",
     "api.js",
     "scanner.js",
+    "ops-bar.js",
     "icons.jsx",
     "tweaks-panel.jsx",
     "widgets.jsx",
