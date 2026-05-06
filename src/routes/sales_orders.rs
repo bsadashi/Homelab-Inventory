@@ -3,6 +3,7 @@
 //! deliberately the same as a real SO so a small business deployment
 //! can use the same endpoints unchanged.
 
+use crate::auth::RequireOperator;
 use crate::audit::{record_in_tx, AuditEvent};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{SalesLine, SalesOrder, SalesOrderInput};
@@ -101,6 +102,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Json(input): Json<SalesOrderInput>,
 ) -> ApiResult<(StatusCode, Json<SalesOrder>)> {
     let id = input.id.clone().unwrap_or_else(|| {
@@ -128,7 +130,7 @@ async fn create(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "so.create",
             r#ref: Some(&id),
             description: &format!("Created pick order {}", id),
@@ -152,6 +154,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
     Json(input): Json<SalesOrderInput>,
 ) -> ApiResult<Json<SalesOrder>> {
@@ -185,7 +188,7 @@ async fn update(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "so.update",
             r#ref: Some(&id),
             description: &format!("Updated pick order {} → {}", id, input.status),
@@ -199,6 +202,7 @@ async fn update(
 
 async fn delete(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
@@ -212,7 +216,7 @@ async fn delete(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "so.delete",
             r#ref: Some(&id),
             description: &format!("Deleted pick order {}", id),

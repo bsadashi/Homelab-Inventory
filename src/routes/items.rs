@@ -5,6 +5,7 @@
 //! identical to the prototype's data shape.
 
 use crate::audit::{record_in_tx, AuditEvent};
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Item, ItemInput, StockLine};
 use crate::state::AppState;
@@ -96,6 +97,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Json(input): Json<ItemInput>,
 ) -> ApiResult<(StatusCode, Json<Item>)> {
     validate(&input)?;
@@ -113,7 +115,7 @@ async fn create(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "item.create",
             r#ref: Some(&id),
             description: &format!("Created item {} ({})", input.name, input.sku),
@@ -130,6 +132,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
     Json(input): Json<ItemInput>,
 ) -> ApiResult<Json<Item>> {
@@ -178,7 +181,7 @@ async fn update(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "item.update",
             r#ref: Some(&id),
             description: &format!("Updated item {}", input.sku),
@@ -192,6 +195,7 @@ async fn update(
 
 async fn delete(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
@@ -205,7 +209,7 @@ async fn delete(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "item.delete",
             r#ref: Some(&id),
             description: &format!("Deleted item {}", id),

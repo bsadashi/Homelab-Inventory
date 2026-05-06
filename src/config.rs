@@ -18,6 +18,10 @@ pub struct Config {
     /// request via `AppState`) doesn't copy the token bytes.
     pub auth_token: Option<Arc<String>>,
     pub seed_on_empty: bool,
+    /// When true, /api/auth/signup accepts requests even after the
+    /// first user has been created. Useful for trusted-network
+    /// homelabs where everyone can self-register; off by default.
+    pub open_signup: bool,
     pub request_timeout: Duration,
     pub max_body_bytes: usize,
     pub log_format: LogFormat,
@@ -51,6 +55,7 @@ impl Config {
             static_dir: None,
             auth_token: auth_token.map(Arc::new),
             seed_on_empty: true,
+            open_signup: false,
             request_timeout: Duration::from_secs(30),
             max_body_bytes: 2 * 1024 * 1024,
             log_format: LogFormat::Pretty,
@@ -91,6 +96,7 @@ impl Config {
             .map(Arc::new);
 
         let seed_on_empty = parse_bool("RACKLOG_SEED_ON_EMPTY", true);
+        let open_signup = parse_bool("RACKLOG_OPEN_SIGNUP", false);
 
         let request_timeout = Duration::from_secs(parse_u64("RACKLOG_REQUEST_TIMEOUT_SECS", 30));
         let max_body_bytes = parse_usize("RACKLOG_MAX_BODY_BYTES", 2 * 1024 * 1024);
@@ -116,6 +122,7 @@ impl Config {
             static_dir,
             auth_token,
             seed_on_empty,
+            open_signup,
             request_timeout,
             max_body_bytes,
             log_format,

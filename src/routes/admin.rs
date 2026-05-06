@@ -11,6 +11,7 @@
 //! GET / curl with no body from triggering a heavy operation.
 
 use crate::audit;
+use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Query, State};
@@ -198,6 +199,7 @@ struct OperationResult {
 
 async fn vacuum(
     State(state): State<AppState>,
+    RequireAdmin(auth): RequireAdmin,
     Query(q): Query<ConfirmQuery>,
 ) -> ApiResult<Json<OperationResult>> {
     require_confirm(&q, "vacuum")?;
@@ -209,7 +211,7 @@ async fn vacuum(
     audit::record(
         &state.pool,
         audit::AuditEvent {
-            user: "admin",
+            user: &auth.username,
             kind: "admin.vacuum",
             r#ref: None,
             description: "VACUUM completed",
@@ -228,6 +230,7 @@ async fn vacuum(
 
 async fn wal_checkpoint(
     State(state): State<AppState>,
+    RequireAdmin(auth): RequireAdmin,
     Query(q): Query<ConfirmQuery>,
 ) -> ApiResult<Json<OperationResult>> {
     require_confirm(&q, "wal_checkpoint")?;
@@ -240,7 +243,7 @@ async fn wal_checkpoint(
     audit::record(
         &state.pool,
         audit::AuditEvent {
-            user: "admin",
+            user: &auth.username,
             kind: "admin.wal_checkpoint",
             r#ref: None,
             description: "WAL checkpoint TRUNCATE completed",
@@ -290,6 +293,7 @@ struct RetainResponse {
 
 async fn retain_activity(
     State(state): State<AppState>,
+    RequireAdmin(auth): RequireAdmin,
     Query(q): Query<RetainQuery>,
 ) -> ApiResult<Json<RetainResponse>> {
     let dry_run = matches!(q.dry_run.as_deref(), Some("1") | Some("true") | Some("yes"));
@@ -343,7 +347,7 @@ async fn retain_activity(
     audit::record_in_tx(
         &mut tx,
         audit::AuditEvent {
-            user: "admin",
+            user: &auth.username,
             kind: "admin.retain_activity",
             r#ref: anchor.as_deref(),
             description: &format!(

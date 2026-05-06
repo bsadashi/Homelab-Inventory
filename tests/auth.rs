@@ -189,6 +189,100 @@ async fn signup_writes_audit_entry() {
     assert_eq!(verify["valid"], true);
 }
 
+// ---- role gates --------------------------------------------------------
+
+async fn signup_user(h: &Harness, username: &str, password: &str) -> String {
+    let resp = raw_post(h, "/api/auth/signup", j!({
+        "username": username, "password": password
+    })).await;
+    extract_session_cookie(&resp).expect("session cookie")
+}
+
+async fn set_role(h: &Harness, username: &str, role: &str) {
+    sqlx::query("UPDATE users SET role = ? WHERE username = ?")
+        .bind(role).bind(username)
+        .execute(&h.pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn viewer_cannot_write() {
+    let h = Harness::boot_open_signup().await;
+    let _admin_cookie = signup_user(&h, "alice", "correcthorse").await;
+    // Bob is the second signup → viewer role.
+    let viewer_cookie = signup_user(&h, "bob", "anothergoodone").await;
+
+    // Bob is a viewer → 403 on POST /api/items.
+    let resp = h.router.clone().oneshot(
+        Request::builder()
+            .method("POST").uri("/api/items")
+            .header(header::COOKIE, &viewer_cookie)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&j!({
+                "sku": "VIEWER-TEST", "name": "Forbidden", "cat": "Tools"
+            })).unwrap())).unwrap(),
+    ).await.unwrap();
+    expect_status(&resp, StatusCode::FORBIDDEN);
+
+    // Reads are fine.
+    let resp = raw_get(&h, "/api/items", Some(&viewer_cookie)).await;
+    expect_ok(&resp);
+}
+
+#[tokio::test]
+async fn operator_can_write_but_not_admin() {
+    let h = Harness::boot_open_signup().await;
+    let _ = signup_user(&h, "alice", "correcthorse").await;
+    let op_cookie = signup_user(&h, "bob", "anothergoodone").await;
+    set_role(&h, "bob", "operator").await;
+
+    // POST /api/items succeeds.
+    let resp = h.router.clone().oneshot(
+        Request::builder()
+            .method("POST").uri("/api/items")
+            .header(header::COOKIE, &op_cookie)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&j!({
+                "sku": "OP-TEST", "name": "Operator can write", "cat": "Tools"
+            })).unwrap())).unwrap(),
+    ).await.unwrap();
+    expect_status(&resp, StatusCode::CREATED);
+
+    // POST /api/admin/vacuum?confirm=1 returns 403.
+    let resp = h.router.clone().oneshot(
+        Request::builder()
+            .method("POST").uri("/api/admin/vacuum?confirm=1")
+            .header(header::COOKIE, &op_cookie)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}")).unwrap(),
+    ).await.unwrap();
+    expect_status(&resp, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn audit_log_records_real_caller_username() {
+    let h = Harness::boot_with(None, false).await;
+    let admin_cookie = signup_user(&h, "alice", "correcthorse").await;
+
+    // Admin creates an item.
+    let _ = h.router.clone().oneshot(
+        Request::builder()
+            .method("POST").uri("/api/items")
+            .header(header::COOKIE, &admin_cookie)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&j!({
+                "sku": "AUDIT-TEST", "name": "Audited", "cat": "Tools"
+            })).unwrap())).unwrap(),
+    ).await.unwrap();
+
+    let entries = json(raw_get(&h, "/api/activity", Some(&admin_cookie)).await).await;
+    let arr = entries.as_array().unwrap();
+    let item_create = arr.iter().find(|e| e["type"] == "item.create").unwrap();
+    assert_eq!(
+        item_create["user"], "alice",
+        "audit log should record the actual caller"
+    );
+}
+
 #[tokio::test]
 async fn login_uses_real_username_in_audit() {
     let h = Harness::boot_with(None, false).await;

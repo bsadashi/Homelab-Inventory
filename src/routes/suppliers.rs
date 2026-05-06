@@ -1,6 +1,7 @@
 //! /api/suppliers — vendors. Open-PO counts are computed on read so the
 //! API always reflects the current order book without bookkeeping fields.
 
+use crate::auth::RequireOperator;
 use crate::audit::{record_in_tx, AuditEvent};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Supplier, SupplierInput};
@@ -56,6 +57,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Json(input): Json<SupplierInput>,
 ) -> ApiResult<(StatusCode, Json<Supplier>)> {
     if input.code.trim().is_empty() || input.name.trim().is_empty() {
@@ -80,7 +82,7 @@ async fn create(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "supplier.create",
             r#ref: Some(&id),
             description: &format!("Created supplier {} ({})", input.name, input.code),
@@ -106,6 +108,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
     Json(input): Json<SupplierInput>,
 ) -> ApiResult<Json<Supplier>> {
@@ -131,7 +134,7 @@ async fn update(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "supplier.update",
             r#ref: Some(&id),
             description: &format!("Updated supplier {}", input.code),
@@ -145,6 +148,7 @@ async fn update(
 
 async fn delete(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
@@ -158,7 +162,7 @@ async fn delete(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "supplier.delete",
             r#ref: Some(&id),
             description: &format!("Deleted supplier {}", id),

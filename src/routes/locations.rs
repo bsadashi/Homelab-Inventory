@@ -1,5 +1,6 @@
 //! /api/locations — physical hierarchy (rack → shelf → bin).
 
+use crate::auth::RequireOperator;
 use crate::audit::{record_in_tx, AuditEvent};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Location, LocationInput};
@@ -60,6 +61,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Json(input): Json<LocationInput>,
 ) -> ApiResult<(StatusCode, Json<Location>)> {
     if input.code.trim().is_empty() || input.name.trim().is_empty() {
@@ -86,7 +88,7 @@ async fn create(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "location.create",
             r#ref: Some(&id),
             description: &format!("Created location {} ({})", input.name, input.code),
@@ -111,6 +113,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
     Json(input): Json<LocationInput>,
 ) -> ApiResult<Json<Location>> {
@@ -135,7 +138,7 @@ async fn update(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "location.update",
             r#ref: Some(&id),
             description: &format!("Updated location {}", input.code),
@@ -156,6 +159,7 @@ async fn update(
 
 async fn delete(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
@@ -176,7 +180,7 @@ async fn delete(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "location.delete",
             r#ref: Some(&id),
             description: &format!("Deleted location {}", id),

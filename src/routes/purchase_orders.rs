@@ -1,6 +1,7 @@
 //! /api/pos — purchase orders. Lines are stored in a child table and
 //! folded back into the JSON shape the frontend expects on read.
 
+use crate::auth::RequireOperator;
 use crate::audit::{record_in_tx, AuditEvent};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{PurchaseLine, PurchaseOrder, PurchaseOrderInput};
@@ -111,6 +112,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Json(input): Json<PurchaseOrderInput>,
 ) -> ApiResult<(StatusCode, Json<PurchaseOrder>)> {
     let id = input.id.clone().unwrap_or_else(next_po_id);
@@ -142,7 +144,7 @@ async fn create(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "po.create",
             r#ref: Some(&id),
             description: &format!("Created purchase order {}", id),
@@ -168,6 +170,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
     Json(input): Json<PurchaseOrderInput>,
 ) -> ApiResult<Json<PurchaseOrder>> {
@@ -206,7 +209,7 @@ async fn update(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "po.update",
             r#ref: Some(&id),
             description: &format!("Updated purchase order {} → {}", id, input.status),
@@ -220,6 +223,7 @@ async fn update(
 
 async fn delete(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
@@ -233,7 +237,7 @@ async fn delete(
     record_in_tx(
         &mut tx,
         AuditEvent {
-            user: "api",
+            user: &auth.username,
             kind: "po.delete",
             r#ref: Some(&id),
             description: &format!("Deleted purchase order {}", id),

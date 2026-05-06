@@ -60,12 +60,6 @@ fn validate_username(s: &str) -> Result<&str, ApiError> {
     Ok(s)
 }
 
-fn open_signup_allowed() -> bool {
-    matches!(
-        std::env::var("RACKLOG_OPEN_SIGNUP").ok().as_deref(),
-        Some("1") | Some("true") | Some("yes")
-    )
-}
 
 fn build_session_cookie(token: &str, expires_at: chrono::DateTime<chrono::Utc>) -> String {
     // HttpOnly so JS can't read it; SameSite=Strict so it isn't sent
@@ -100,7 +94,7 @@ async fn signup(
     // opted in via RACKLOG_OPEN_SIGNUP=1.
     let (role, source_label) = if count == 0 {
         (Role::Admin, "signup-bootstrap")
-    } else if open_signup_allowed() {
+    } else if state.cfg.open_signup {
         (Role::Viewer, "signup-open")
     } else {
         return Err(ApiError::Forbidden);
@@ -268,7 +262,7 @@ async fn me(
                 .and_then(|v| v.as_str().map(str::to_string))
                 .unwrap_or_else(|| "unknown".into()),
             bootstrap_open: count == 0,
-            open_signup: open_signup_allowed(),
+            open_signup: state.cfg.open_signup,
         }));
     }
     Err(ApiError::Unauthorized)

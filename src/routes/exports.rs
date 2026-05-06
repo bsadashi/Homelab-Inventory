@@ -7,6 +7,7 @@
 //! treat it as text.
 
 use crate::audit::{record_in_tx, AuditEvent};
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::extract::State;
@@ -123,6 +124,7 @@ pub struct ImportError {
 /// fix and re-run.
 async fn import_items_csv(
     State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
     body: String,
 ) -> ApiResult<Json<ImportSummary>> {
     if body.trim().is_empty() {
@@ -252,7 +254,8 @@ async fn import_items_csv(
         // but leave previous rows committed. The audit chain is still
         // intact because record_in_tx runs inside the same tx.
         let outcome = upsert_one(
-            &state.pool, &sku, &name, &category, brand.as_deref(),
+            &state.pool, &auth.username,
+            &sku, &name, &category, brand.as_deref(),
             resolved_supplier.as_deref(), cost, price, &unit,
             min_qty, max_qty, qty, allocated,
             barcode.as_deref(), img.as_deref(),
@@ -307,6 +310,7 @@ fn sanitise_row_error(e: &ApiError) -> String {
 #[allow(clippy::too_many_arguments)]
 async fn upsert_one(
     pool: &sqlx::SqlitePool,
+    user: &str,
     sku: &str, name: &str, category: &str,
     brand: Option<&str>, supplier: Option<&str>,
     cost: f64, price: f64, unit: &str,
@@ -340,7 +344,7 @@ async fn upsert_one(
         .bind(&id)
         .execute(&mut *tx).await?;
         record_in_tx(&mut tx, AuditEvent {
-            user: "import",
+            user,
             kind: "item.import_update",
             r#ref: Some(&id),
             description: &format!("Imported (update) item {}", sku),
@@ -365,7 +369,7 @@ async fn upsert_one(
         .bind(chrono::Utc::now().date_naive().to_string())
         .execute(&mut *tx).await?;
         record_in_tx(&mut tx, AuditEvent {
-            user: "import",
+            user,
             kind: "item.import_create",
             r#ref: Some(&id),
             description: &format!("Imported (create) item {}", sku),
