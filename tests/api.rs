@@ -313,6 +313,71 @@ async fn auth_with_wrong_token_is_rejected() {
     expect_status(&resp, StatusCode::UNAUTHORIZED);
 }
 
+// ---- CSV exports -------------------------------------------------------
+
+#[tokio::test]
+async fn items_csv_export_has_header_and_rows() {
+    let h = Harness::boot().await;
+    let resp = h.get("/api/exports/items.csv").await;
+    expect_ok(&resp);
+    assert_eq!(
+        resp.headers()[axum::http::header::CONTENT_TYPE],
+        "text/csv; charset=utf-8"
+    );
+    assert!(resp.headers()[axum::http::header::CONTENT_DISPOSITION]
+        .to_str()
+        .unwrap()
+        .contains("items.csv"));
+
+    let body = common::body_string(resp).await;
+    let lines: Vec<&str> = body.lines().collect();
+    assert!(lines[0].starts_with("id,sku,name,category"));
+    assert_eq!(lines.len(), 37, "header + 36 seeded items");
+    assert!(body.contains("NET-USW-PRO-24"));
+}
+
+#[tokio::test]
+async fn activity_csv_export_includes_chain_hashes() {
+    let h = Harness::boot().await;
+    let resp = h.get("/api/exports/activity.csv").await;
+    expect_ok(&resp);
+    let body = common::body_string(resp).await;
+    let lines: Vec<&str> = body.lines().collect();
+    assert!(lines[0].starts_with("ts,user,type,ref,description,hash"));
+    assert!(lines.len() >= 13, "header + ≥12 seeded activity rows");
+}
+
+#[tokio::test]
+async fn csv_export_neutralises_formula_injection() {
+    // Inject an item whose name starts with '=' — a textbook CSV
+    // injection vector. The export must escape it so spreadsheet apps
+    // treat it as literal text rather than evaluating a formula.
+    let h = Harness::boot().await;
+    let payload = serde_json::json!({
+        "id": "I-CSVI-001",
+        "sku": "CSVI-EVIL",
+        "name": "=HYPERLINK(\"http://evil\")",
+        "cat": "Tools",
+        "qty": 1,
+        "loc": []
+    });
+    let create = h.post_json("/api/items", &payload).await;
+    expect_status(&create, axum::http::StatusCode::CREATED);
+
+    let body = common::body_string(h.get("/api/exports/items.csv").await).await;
+    // The leading '=' must be neutralised by a single-quote prefix and
+    // wrapped in quotes because the value contains a comma / quote.
+    assert!(
+        body.contains("'=HYPERLINK"),
+        "formula prefix must be neutralised: {}",
+        body
+    );
+    assert!(
+        !body.lines().any(|l| l.starts_with('=')),
+        "no value line may start with a bare '='"
+    );
+}
+
 // ---- aggregate stats ---------------------------------------------------
 
 #[tokio::test]
