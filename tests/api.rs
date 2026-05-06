@@ -570,6 +570,28 @@ async fn lookup_returns_empty_when_no_provider_and_no_local() {
     assert!(body["providers_tried"].as_array().unwrap().is_empty());
 }
 
+// ---- outer layers ------------------------------------------------------
+
+#[tokio::test]
+async fn body_size_limit_rejects_oversized_csv() {
+    // RACKLOG_MAX_BODY_BYTES defaults to 2 MiB. Sending >2 MiB must
+    // be rejected by the outer RequestBodyLimitLayer (now exercised
+    // via routes::serve).
+    let h = Harness::boot().await;
+    let mut huge = String::from("sku,name\n");
+    while huge.len() < 3 * 1024 * 1024 {
+        huge.push_str("AAAAAA,padding-row-with-a-long-comment-to-pump-bytes\n");
+    }
+    assert!(huge.len() > 2 * 1024 * 1024, "test fixture must exceed limit");
+    let resp = h.post_csv("/api/exports/items.csv", &huge).await;
+    assert_eq!(
+        resp.status(),
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "outer body-limit layer should reject; got {}",
+        resp.status()
+    );
+}
+
 // ---- admin surface -----------------------------------------------------
 
 #[tokio::test]

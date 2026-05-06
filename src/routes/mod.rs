@@ -59,6 +59,19 @@ pub fn build(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Build the fully-armed router, including the outer infrastructure
+/// layers (request body limit, per-request timeout, gzip compression,
+/// HTTP tracing). Both `main.rs` and the integration test harness
+/// build through this so layer regressions are caught in CI.
+pub fn serve(state: AppState) -> Router {
+    let cfg = state.cfg.clone();
+    build(state)
+        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(tower_http::timeout::TimeoutLayer::new(cfg.request_timeout))
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(cfg.max_body_bytes))
+        .layer(tower_http::compression::CompressionLayer::new())
+}
+
 fn api_routes() -> Router<AppState> {
     Router::new()
         .merge(health::router())

@@ -4,7 +4,6 @@ use racklog::{audit, config::Config, db, logging, routes, seed, state::AppState}
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::signal;
-use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -50,11 +49,10 @@ async fn main() -> anyhow::Result<()> {
     routes::admin::touch_uptime();
 
     let state = AppState::new(pool.clone(), cfg.clone());
-    let app = routes::build(state)
-        .layer(TraceLayer::new_for_http())
-        .layer(tower_http::timeout::TimeoutLayer::new(cfg.request_timeout))
-        .layer(tower_http::limit::RequestBodyLimitLayer::new(cfg.max_body_bytes))
-        .layer(tower_http::compression::CompressionLayer::new());
+    // routes::serve adds the outer infrastructure layers (tracing,
+    // timeout, body limit, compression). Tests use the same helper
+    // so a regression in any of those layers is caught in CI.
+    let app = routes::serve(state);
 
     let listener = TcpListener::bind(cfg.bind).await?;
     tracing::info!(addr = %cfg.bind, "listening");

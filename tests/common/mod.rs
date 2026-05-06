@@ -53,7 +53,9 @@ impl Harness {
         }
 
         let state = AppState::with_providers(pool.clone(), cfg, providers);
-        let router = routes::build(state);
+        // Same layer stack the binary uses, so the body-size limit /
+        // timeout / compression / tracing layers are exercised in CI.
+        let router = routes::serve(state);
         Self {
             router,
             pool,
