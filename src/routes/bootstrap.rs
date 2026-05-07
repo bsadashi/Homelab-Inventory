@@ -5,6 +5,7 @@
 //! existing views keep rendering unchanged. Putting everything in one
 //! response keeps cold-start fast and avoids ten parallel fetches.
 
+use crate::db::RowExt;
 use crate::error::ApiResult;
 use crate::models::*;
 use crate::state::AppState;
@@ -75,7 +76,7 @@ async fn read_locations(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Location>> {
             code: r.get("code"),
             name: r.get("name"),
             kind: r.get("type"),
-            parent: r.try_get("parent").ok().flatten(),
+            parent: r.opt_string("parent"),
             bins: serde_json::from_str(&r.get::<String, _>("bins")).unwrap_or_default(),
         })
         .collect())
@@ -102,59 +103,27 @@ async fn read_suppliers(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Supplier>> {
             id: r.get("id"),
             code: r.get("code"),
             name: r.get("name"),
-            contact: r.try_get("contact").ok().flatten(),
-            lead_time: r.try_get("lead_time").ok().flatten(),
-            rating: r.try_get("rating").ok().flatten(),
-            open_pos: r.try_get("open_pos").unwrap_or(0),
-            total_spend: r.try_get("total_spend").unwrap_or(0.0),
+            contact: r.opt_string("contact"),
+            lead_time: r.opt_i64("lead_time"),
+            rating: r.opt_f64("rating"),
+            open_pos: r.i64_or("open_pos", 0),
+            total_spend: r.f64_or("total_spend", 0.0),
         })
         .collect())
 }
 
 async fn read_items(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Item>> {
-    let rows = sqlx::query(
-        "SELECT id, sku, name, category, brand, supplier_id, cost, price, unit, \
-         min_qty, max_qty, qty, allocated, barcode, variants, lots, tags, img, updated \
-         FROM items ORDER BY sku",
-    )
+    let rows = sqlx::query(&format!(
+        "SELECT {} FROM items ORDER BY sku",
+        crate::routes::items::ITEM_COLUMNS,
+    ))
     .fetch_all(pool)
     .await?;
+    // Reuse the canonical row → Item mapper so a column rename has
+    // exactly one site to follow.
     let mut items: Vec<Item> = rows
         .into_iter()
-        .map(|r| Item {
-            id: r.get("id"),
-            sku: r.get("sku"),
-            name: r.get("name"),
-            category: r.get("category"),
-            brand: r.try_get("brand").ok().flatten(),
-            supplier: r.try_get("supplier_id").ok().flatten(),
-            cost: r.try_get("cost").unwrap_or(0.0),
-            price: r.try_get("price").unwrap_or(0.0),
-            unit: r.try_get("unit").unwrap_or_else(|_| "ea".into()),
-            min: r.try_get("min_qty").unwrap_or(0),
-            max: r.try_get("max_qty").unwrap_or(0),
-            qty: r.try_get("qty").unwrap_or(0),
-            allocated: r.try_get("allocated").unwrap_or(0),
-            barcode: r.try_get("barcode").ok().flatten(),
-            loc: Vec::new(),
-            variants: r
-                .try_get::<Option<String>, _>("variants")
-                .ok()
-                .flatten()
-                .and_then(|s| serde_json::from_str(&s).ok()),
-            lots: r
-                .try_get::<Option<String>, _>("lots")
-                .ok()
-                .flatten()
-                .and_then(|s| serde_json::from_str(&s).ok()),
-            tags: r
-                .try_get::<String, _>("tags")
-                .ok()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_default(),
-            updated: r.try_get("updated").ok().flatten(),
-            img: r.try_get("img").ok().flatten(),
-        })
+        .map(crate::routes::items::row_to_item)
         .collect();
 
     let stock_rows = sqlx::query("SELECT item_id, location_id, bin, qty, serials FROM item_stock")
@@ -165,11 +134,8 @@ async fn read_items(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Item>> {
         let item_id: String = r.get("item_id");
         stock.entry(item_id).or_default().push(StockLine {
             l: r.get("location_id"),
-            b: r.try_get::<Option<String>, _>("bin")
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-            q: r.try_get("qty").unwrap_or(0),
+            b: r.string_or_default("bin"),
+            q: r.i64_or("qty", 0),
             serial: r
                 .try_get::<Option<String>, _>("serials")
                 .ok()
@@ -194,12 +160,12 @@ async fn read_pos(pool: &sqlx::SqlitePool) -> ApiResult<Vec<PurchaseOrder>> {
         .into_iter()
         .map(|r| PurchaseOrder {
             id: r.get("id"),
-            supplier: r.try_get("supplier_id").ok().flatten(),
+            supplier: r.opt_string("supplier_id"),
             status: r.get("status"),
             created: r.get("created"),
-            expected: r.try_get("expected").ok().flatten(),
-            received: r.try_get("received").ok().flatten(),
-            total: r.try_get("total").unwrap_or(0.0),
+            expected: r.opt_string("expected"),
+            received: r.opt_string("received"),
+            total: r.f64_or("total", 0.0),
             lines: Vec::new(),
         })
         .collect();
@@ -211,8 +177,8 @@ async fn read_pos(pool: &sqlx::SqlitePool) -> ApiResult<Vec<PurchaseOrder>> {
         let id: String = r.get("po_id");
         by.entry(id).or_default().push(PurchaseLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
-            cost: r.try_get("cost").unwrap_or(0.0),
+            qty: r.i64_or("qty", 0),
+            cost: r.f64_or("cost", 0.0),
         });
     }
     for po in out.iter_mut() {
@@ -231,10 +197,10 @@ async fn read_sos(pool: &sqlx::SqlitePool) -> ApiResult<Vec<SalesOrder>> {
         .into_iter()
         .map(|r| SalesOrder {
             id: r.get("id"),
-            proj: r.try_get("project").ok().flatten(),
+            proj: r.opt_string("project"),
             status: r.get("status"),
             created: r.get("created"),
-            priority: r.try_get("priority").ok().flatten(),
+            priority: r.opt_string("priority"),
             lines: Vec::new(),
         })
         .collect();
@@ -246,7 +212,7 @@ async fn read_sos(pool: &sqlx::SqlitePool) -> ApiResult<Vec<SalesOrder>> {
         let id: String = r.get("so_id");
         by.entry(id).or_default().push(SalesLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
+            qty: r.i64_or("qty", 0),
         });
     }
     for so in out.iter_mut() {
@@ -264,8 +230,8 @@ async fn read_transfers(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Transfer>> {
         .into_iter()
         .map(|r| Transfer {
             id: r.get("id"),
-            from: r.try_get("from_loc").ok().flatten(),
-            to: r.try_get("to_loc").ok().flatten(),
+            from: r.opt_string("from_loc"),
+            to: r.opt_string("to_loc"),
             date: r.get("date"),
             status: r.get("status"),
             lines: Vec::new(),
@@ -279,7 +245,7 @@ async fn read_transfers(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Transfer>> {
         let id: String = r.get("transfer_id");
         by.entry(id).or_default().push(TransferLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
+            qty: r.i64_or("qty", 0),
         });
     }
     for tr in out.iter_mut() {
@@ -299,12 +265,12 @@ async fn read_counts(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Count>> {
         .into_iter()
         .map(|r| Count {
             id: r.get("id"),
-            loc: r.try_get("location_id").ok().flatten(),
+            loc: r.opt_string("location_id"),
             date: r.get("date"),
             status: r.get("status"),
-            counted: r.try_get("counted").unwrap_or(0),
-            variance: r.try_get("variance").unwrap_or(0),
-            by: r.try_get("by_user").ok().flatten(),
+            counted: r.i64_or("counted", 0),
+            variance: r.i64_or("variance", 0),
+            by: r.opt_string("by_user"),
         })
         .collect())
 }

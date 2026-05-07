@@ -2,6 +2,7 @@
 
 use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
+use crate::db::RowExt;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Location, LocationInput};
 use crate::state::AppState;
@@ -30,7 +31,7 @@ async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<Location>>> {
             code: r.get("code"),
             name: r.get("name"),
             kind: r.get("type"),
-            parent: r.try_get("parent").ok().flatten(),
+            parent: r.opt_string("parent"),
             bins: serde_json::from_str(&r.get::<String, _>("bins")).unwrap_or_default(),
         })
         .collect();

@@ -2,6 +2,7 @@
 
 use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
+use crate::db::RowExt;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Count, CountInput};
 use crate::routes::pagination::PageQuery;
@@ -155,11 +156,11 @@ async fn delete(
 fn row_to_count(r: sqlx::sqlite::SqliteRow) -> Count {
     Count {
         id: r.get("id"),
-        loc: r.try_get("location_id").ok().flatten(),
+        loc: r.opt_string("location_id"),
         date: r.get("date"),
         status: r.get("status"),
-        counted: r.try_get("counted").unwrap_or(0),
-        variance: r.try_get("variance").unwrap_or(0),
-        by: r.try_get("by_user").ok().flatten(),
+        counted: r.i64_or("counted", 0),
+        variance: r.i64_or("variance", 0),
+        by: r.opt_string("by_user"),
     }
 }

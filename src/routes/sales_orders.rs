@@ -5,6 +5,7 @@
 
 use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
+use crate::db::RowExt;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{SalesLine, SalesOrder, SalesOrderInput};
 use crate::routes::pagination::PageQuery;
@@ -38,10 +39,10 @@ async fn list(
         .into_iter()
         .map(|r| SalesOrder {
             id: r.get("id"),
-            proj: r.try_get("project").ok().flatten(),
+            proj: r.opt_string("project"),
             status: r.get("status"),
             created: r.get("created"),
-            priority: r.try_get("priority").ok().flatten(),
+            priority: r.opt_string("priority"),
             lines: Vec::new(),
         })
         .collect();
@@ -53,7 +54,7 @@ async fn list(
         let so_id: String = r.get("so_id");
         by.entry(so_id).or_default().push(SalesLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
+            qty: r.i64_or("qty", 0),
         });
     }
     for so in out.iter_mut() {
@@ -79,7 +80,7 @@ async fn get_one(
         .into_iter()
         .map(|r| SalesLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
+            qty: r.i64_or("qty", 0),
         })
         .collect();
     Ok(Json(SalesOrder {

@@ -3,6 +3,7 @@
 
 use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
+use crate::db::RowExt;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Supplier, SupplierInput};
 use crate::state::AppState;
@@ -170,11 +171,11 @@ fn row_to_supplier(r: sqlx::sqlite::SqliteRow) -> Supplier {
         id: r.get("id"),
         code: r.get("code"),
         name: r.get("name"),
-        contact: r.try_get("contact").ok().flatten(),
-        lead_time: r.try_get("lead_time").ok().flatten(),
-        rating: r.try_get("rating").ok().flatten(),
-        open_pos: r.try_get::<i64, _>("open_pos").unwrap_or(0),
-        total_spend: r.try_get::<f64, _>("total_spend").unwrap_or(0.0),
+        contact: r.opt_string("contact"),
+        lead_time: r.opt_i64("lead_time"),
+        rating: r.opt_f64("rating"),
+        open_pos: r.i64_or("open_pos", 0),
+        total_spend: r.f64_or("total_spend", 0.0),
     }
 }
 

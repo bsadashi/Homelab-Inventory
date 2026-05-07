@@ -6,10 +6,18 @@
 
 use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
+use crate::db::RowExt;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Item, ItemInput, StockLine};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
+
+/// Column list for `SELECT … FROM items`. Listed in one place so
+/// `list`, `get_one`, and the bootstrap snapshot stay in lockstep
+/// when the schema changes.
+pub(crate) const ITEM_COLUMNS: &str = "id, sku, name, category, brand, supplier_id, cost, \
+                                       price, unit, min_qty, max_qty, qty, allocated, \
+                                       barcode, variants, lots, tags, img, updated";
 use axum::http::StatusCode;
 use axum::routing::{get, put};
 use axum::{Json, Router};
@@ -44,11 +52,7 @@ async fn list(
     }
     .resolve();
 
-    let mut sql = String::from(
-        "SELECT id, sku, name, category, brand, supplier_id, cost, price, unit, \
-         min_qty, max_qty, qty, allocated, barcode, variants, lots, tags, img, updated \
-         FROM items WHERE 1=1",
-    );
+    let mut sql = format!("SELECT {ITEM_COLUMNS} FROM items WHERE 1=1");
     if filter.category.is_some() {
         sql.push_str(" AND category = ?");
     }
@@ -91,15 +95,11 @@ async fn list(
 }
 
 async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Item>> {
-    let row = sqlx::query(
-        "SELECT id, sku, name, category, brand, supplier_id, cost, price, unit, \
-         min_qty, max_qty, qty, allocated, barcode, variants, lots, tags, img, updated \
-         FROM items WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let row = sqlx::query(&format!("SELECT {ITEM_COLUMNS} FROM items WHERE id = ?"))
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let mut item = row_to_item(row);
     item.loc = load_stock_for(&state.pool, &id).await?;
     Ok(Json(item))
@@ -404,40 +404,32 @@ async fn load_all_stock<'a>(
     Ok(out)
 }
 
-fn row_to_item(r: sqlx::sqlite::SqliteRow) -> Item {
+pub(crate) fn row_to_item(r: sqlx::sqlite::SqliteRow) -> Item {
     Item {
-        id: r.get("id"),
-        sku: r.get("sku"),
-        name: r.get("name"),
-        category: r.get("category"),
-        brand: r.try_get("brand").ok().flatten(),
-        supplier: r.try_get("supplier_id").ok().flatten(),
-        cost: r.try_get("cost").unwrap_or(0.0),
-        price: r.try_get("price").unwrap_or(0.0),
-        unit: r.try_get("unit").unwrap_or_else(|_| "ea".into()),
-        min: r.try_get("min_qty").unwrap_or(0),
-        max: r.try_get("max_qty").unwrap_or(0),
-        qty: r.try_get("qty").unwrap_or(0),
-        allocated: r.try_get("allocated").unwrap_or(0),
-        barcode: r.try_get("barcode").ok().flatten(),
+        id: r.string_or_default("id"),
+        sku: r.string_or_default("sku"),
+        name: r.string_or_default("name"),
+        category: r.string_or_default("category"),
+        brand: r.opt_string("brand"),
+        supplier: r.opt_string("supplier_id"),
+        cost: r.f64_or("cost", 0.0),
+        price: r.f64_or("price", 0.0),
+        unit: r.opt_string("unit").unwrap_or_else(|| "ea".into()),
+        min: r.i64_or("min_qty", 0),
+        max: r.i64_or("max_qty", 0),
+        qty: r.i64_or("qty", 0),
+        allocated: r.i64_or("allocated", 0),
+        barcode: r.opt_string("barcode"),
         loc: Vec::new(),
         variants: r
-            .try_get::<Option<String>, _>("variants")
-            .ok()
-            .flatten()
+            .opt_string("variants")
             .and_then(|s| serde_json::from_str(&s).ok()),
         lots: r
-            .try_get::<Option<String>, _>("lots")
-            .ok()
-            .flatten()
+            .opt_string("lots")
             .and_then(|s| serde_json::from_str(&s).ok()),
-        tags: r
-            .try_get::<String, _>("tags")
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default(),
-        updated: r.try_get("updated").ok().flatten(),
-        img: r.try_get("img").ok().flatten(),
+        tags: serde_json::from_str(&r.string_or_default("tags")).unwrap_or_default(),
+        updated: r.opt_string("updated"),
+        img: r.opt_string("img"),
     }
 }
 

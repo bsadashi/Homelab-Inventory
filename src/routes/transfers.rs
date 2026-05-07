@@ -2,6 +2,7 @@
 
 use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
+use crate::db::RowExt;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Transfer, TransferInput, TransferLine};
 use crate::routes::pagination::PageQuery;
@@ -35,8 +36,8 @@ async fn list(
         .into_iter()
         .map(|r| Transfer {
             id: r.get("id"),
-            from: r.try_get("from_loc").ok().flatten(),
-            to: r.try_get("to_loc").ok().flatten(),
+            from: r.opt_string("from_loc"),
+            to: r.opt_string("to_loc"),
             date: r.get("date"),
             status: r.get("status"),
             lines: Vec::new(),
@@ -50,7 +51,7 @@ async fn list(
         let tid: String = r.get("transfer_id");
         by.entry(tid).or_default().push(TransferLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
+            qty: r.i64_or("qty", 0),
         });
     }
     for tr in out.iter_mut() {
@@ -75,7 +76,7 @@ async fn get_one(
         .into_iter()
         .map(|r| TransferLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
+            qty: r.i64_or("qty", 0),
         })
         .collect();
     Ok(Json(Transfer {

@@ -3,6 +3,7 @@
 
 use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
+use crate::db::RowExt;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{PurchaseLine, PurchaseOrder, PurchaseOrderInput};
 use crate::routes::pagination::PageQuery;
@@ -37,12 +38,12 @@ async fn list(
         .into_iter()
         .map(|r| PurchaseOrder {
             id: r.get("id"),
-            supplier: r.try_get("supplier_id").ok().flatten(),
+            supplier: r.opt_string("supplier_id"),
             status: r.get("status"),
             created: r.get("created"),
-            expected: r.try_get("expected").ok().flatten(),
-            received: r.try_get("received").ok().flatten(),
-            total: r.try_get("total").unwrap_or(0.0),
+            expected: r.opt_string("expected"),
+            received: r.opt_string("received"),
+            total: r.f64_or("total", 0.0),
             lines: Vec::new(),
         })
         .collect();
@@ -55,8 +56,8 @@ async fn list(
         let po_id: String = r.get("po_id");
         by_po.entry(po_id).or_default().push(PurchaseLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
-            cost: r.try_get("cost").unwrap_or(0.0),
+            qty: r.i64_or("qty", 0),
+            cost: r.f64_or("cost", 0.0),
         });
     }
     for po in out.iter_mut() {
@@ -84,8 +85,8 @@ async fn get_one(
         .into_iter()
         .map(|r| PurchaseLine {
             sku: r.get("sku"),
-            qty: r.try_get("qty").unwrap_or(0),
-            cost: r.try_get("cost").unwrap_or(0.0),
+            qty: r.i64_or("qty", 0),
+            cost: r.f64_or("cost", 0.0),
         })
         .collect();
 
