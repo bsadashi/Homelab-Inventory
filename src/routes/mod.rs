@@ -19,6 +19,7 @@ pub mod purchase_orders;
 pub mod sales_orders;
 pub mod stats;
 pub mod suppliers;
+pub mod trackers;
 pub mod transfers;
 pub mod web;
 
@@ -96,6 +97,7 @@ fn api_routes() -> Router<AppState> {
         .nest("/pos", purchase_orders::router())
         .nest("/sos", sales_orders::router())
         .nest("/transfers", transfers::router())
+        .nest("/trackers", trackers::router())
         .nest("/counts", counts::router())
         .nest("/events", events::router())
         .nest("/activity", activity::router())

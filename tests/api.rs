@@ -802,6 +802,75 @@ async fn admin_endpoints_protected_by_token() {
     expect_ok(&ok);
 }
 
+// ---- trackers ----------------------------------------------------------
+
+#[tokio::test]
+async fn tracker_bind_then_sync_then_unbind() {
+    let h = Harness::boot().await;
+    // Bind a tracker to a seeded item.
+    let resp = h
+        .post_json(
+            "/api/trackers",
+            &serde_json::json!({
+                "item_id": "I001",
+                "provider": "airtag",
+                "provider_id": "ATX-DEMO-1",
+                "label": "rack key"
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::CREATED);
+    let tracker_id = json(resp).await["id"].as_str().unwrap().to_string();
+
+    // Push a sync update.
+    let resp = h
+        .post_json(
+            &format!("/api/trackers/{tracker_id}/sync"),
+            &serde_json::json!({
+                "last_seen_label": "RACK-A · U6",
+                "battery_pct": 87
+            }),
+        )
+        .await;
+    expect_ok(&resp);
+    let body = json(resp).await;
+    assert_eq!(body["last_seen_label"], "RACK-A · U6");
+    assert_eq!(body["battery_pct"], 87);
+    assert!(body["last_seen_at"].is_string(), "last_seen_at populated");
+
+    // Unbind.
+    let resp = h.delete(&format!("/api/trackers/{tracker_id}")).await;
+    expect_status(&resp, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn tracker_create_rejects_unknown_provider_or_item() {
+    let h = Harness::boot().await;
+    let resp = h
+        .post_json(
+            "/api/trackers",
+            &serde_json::json!({
+                "item_id": "I001",
+                "provider": "bogus-tag",
+                "provider_id": "x"
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::BAD_REQUEST);
+
+    let resp = h
+        .post_json(
+            "/api/trackers",
+            &serde_json::json!({
+                "item_id": "I-DOES-NOT-EXIST",
+                "provider": "tile",
+                "provider_id": "y"
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::NOT_FOUND);
+}
+
 // ---- /api/events webhook ingest ----------------------------------------
 
 #[tokio::test]
