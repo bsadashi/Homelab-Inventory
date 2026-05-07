@@ -21,12 +21,18 @@ pub const SESSION_COOKIE: &str = "racklog_session";
 /// reachable for Kubernetes; the /auth subtree has to be reachable or
 /// there's no way to ever obtain credentials.
 const PUBLIC_PATHS: &[&str] = &[
-    "/api/healthz", "/api/readyz",
-    "/healthz",     "/readyz",
-    "/api/auth/signup", "/auth/signup",
-    "/api/auth/login",  "/auth/login",
-    "/api/auth/logout", "/auth/logout",
-    "/api/auth/me",     "/auth/me",
+    "/api/healthz",
+    "/api/readyz",
+    "/healthz",
+    "/readyz",
+    "/api/auth/signup",
+    "/auth/signup",
+    "/api/auth/login",
+    "/auth/login",
+    "/api/auth/logout",
+    "/auth/logout",
+    "/api/auth/me",
+    "/auth/me",
 ];
 
 /// Snapshot of every credential the resolver needs, captured up-front
@@ -59,10 +65,7 @@ pub async fn require_auth(
     Ok(next.run(request).await)
 }
 
-fn snapshot_credentials(
-    request: &Request<axum::body::Body>,
-    trust_forwarded: bool,
-) -> Credentials {
+fn snapshot_credentials(request: &Request<axum::body::Body>, trust_forwarded: bool) -> Credentials {
     let path = request.uri().path().to_string();
 
     let cookie = request
@@ -124,9 +127,7 @@ async fn resolve_identity(state: &AppState, c: &Credentials) -> Option<AuthIdent
             return Some(id);
         }
         if let Some(expected) = state.cfg.auth_token.clone() {
-            if presented == &*expected
-                && users::count(&state.pool).await.unwrap_or(0) == 0
-            {
+            if presented == &*expected && users::count(&state.pool).await.unwrap_or(0) == 0 {
                 return Some(AuthIdentity::bootstrap_admin());
             }
         }
@@ -219,7 +220,7 @@ pub fn strip_bearer_scheme(header: &str) -> Option<&str> {
 
 fn map_groups_to_role(groups: &str) -> Role {
     let mut best = Role::Viewer;
-    for p in groups.split(|c: char| c == ',' || c == '|') {
+    for p in groups.split([',', '|']) {
         let p = p.trim().to_ascii_lowercase();
         match p.as_str() {
             "racklog-admin" | "admin" | "admins" => return Role::Admin,
@@ -242,7 +243,10 @@ mod tests {
     #[test]
     fn parses_session_cookie() {
         let v = "foo=bar; racklog_session=abcdef; baz=qux";
-        assert_eq!(parse_cookie(v, "racklog_session").as_deref(), Some("abcdef"));
+        assert_eq!(
+            parse_cookie(v, "racklog_session").as_deref(),
+            Some("abcdef")
+        );
         assert!(parse_cookie(v, "missing").is_none());
     }
 

@@ -88,3 +88,22 @@ panic = "abort"
 [profile.dev]
 opt-level = 0
 debug = 1
+
+# Project-wide lints. CI fails on any warning so drift is impossible
+# to introduce silently; for one-off escape hatches use a localised
+# `#[allow(...)]` with a comment explaining why.
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "warn"
+unreachable_pub = "warn"
+elided_lifetimes_in_paths = "warn"
+
+[lints.clippy]
+# Defaults plus the categories that catch the most maintenance bugs
+# in our experience. Pedantic + nursery left off intentionally — too
+# noisy for a working codebase.
+all = { level = "warn", priority = -1 }
+# sqlx::query_as tuple types blow past the default 250-token complexity
+# limit. We could factor them out but it just renames the noise.
+type_complexity = "allow"
+

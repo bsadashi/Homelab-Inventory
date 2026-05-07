@@ -1,8 +1,8 @@
 //! /api/suppliers — vendors. Open-PO counts are computed on read so the
 //! API always reflects the current order book without bookkeeping fields.
 
-use crate::auth::RequireOperator;
 use crate::audit::log_in_tx;
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Supplier, SupplierInput};
 use crate::state::AppState;
@@ -79,7 +79,14 @@ async fn create(
     .execute(&mut *tx)
     .await
     .map_err(map_unique)?;
-    log_in_tx(&mut tx, &auth.username, "supplier.create", Some(&id), &format!("Created supplier {} ({})", input.name, input.code)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "supplier.create",
+        Some(&id),
+        &format!("Created supplier {} ({})", input.name, input.code),
+    )
+    .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -121,7 +128,14 @@ async fn update(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "supplier.update", Some(&id), &format!("Updated supplier {}", input.code)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "supplier.update",
+        Some(&id),
+        &format!("Updated supplier {}", input.code),
+    )
+    .await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -139,7 +153,14 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "supplier.delete", Some(&id), &format!("Deleted supplier {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "supplier.delete",
+        Some(&id),
+        &format!("Deleted supplier {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

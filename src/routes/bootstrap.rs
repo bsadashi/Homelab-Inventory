@@ -64,11 +64,10 @@ pub async fn snapshot(pool: &sqlx::SqlitePool) -> ApiResult<Bootstrap> {
 }
 
 async fn read_locations(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Location>> {
-    let rows = sqlx::query(
-        "SELECT id, code, name, type, parent, bins FROM locations ORDER BY code",
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT id, code, name, type, parent, bins FROM locations ORDER BY code")
+            .fetch_all(pool)
+            .await?;
     Ok(rows
         .into_iter()
         .map(|r| Location {
@@ -158,17 +157,18 @@ async fn read_items(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Item>> {
         })
         .collect();
 
-    let stock_rows = sqlx::query(
-        "SELECT item_id, location_id, bin, qty, serials FROM item_stock",
-    )
-    .fetch_all(pool)
-    .await?;
+    let stock_rows = sqlx::query("SELECT item_id, location_id, bin, qty, serials FROM item_stock")
+        .fetch_all(pool)
+        .await?;
     let mut stock: std::collections::HashMap<String, Vec<StockLine>> = Default::default();
     for r in stock_rows {
         let item_id: String = r.get("item_id");
         stock.entry(item_id).or_default().push(StockLine {
             l: r.get("location_id"),
-            b: r.try_get::<Option<String>, _>("bin").ok().flatten().unwrap_or_default(),
+            b: r.try_get::<Option<String>, _>("bin")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
             q: r.try_get("qty").unwrap_or(0),
             serial: r
                 .try_get::<Option<String>, _>("serials")
@@ -256,11 +256,10 @@ async fn read_sos(pool: &sqlx::SqlitePool) -> ApiResult<Vec<SalesOrder>> {
 }
 
 async fn read_transfers(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Transfer>> {
-    let rows = sqlx::query(
-        "SELECT id, from_loc, to_loc, date, status FROM transfers ORDER BY date DESC",
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT id, from_loc, to_loc, date, status FROM transfers ORDER BY date DESC")
+            .fetch_all(pool)
+            .await?;
     let mut out: Vec<Transfer> = rows
         .into_iter()
         .map(|r| Transfer {
@@ -311,18 +310,43 @@ async fn read_counts(pool: &sqlx::SqlitePool) -> ApiResult<Vec<Count>> {
 }
 
 async fn read_status(pool: &sqlx::SqlitePool) -> ApiResult<StatusSummary> {
-    let total_skus: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items").fetch_one(pool).await?;
-    let total_units: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(qty), 0) FROM items").fetch_one(pool).await?;
-    let total_value: f64 = sqlx::query_scalar("SELECT CAST(COALESCE(SUM(qty * cost), 0) AS REAL) FROM items").fetch_one(pool).await?;
-    let low_stock: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty > 0 AND qty < min_qty").fetch_one(pool).await?;
-    let out_of_stock: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty = 0").fetch_one(pool).await?;
+    let total_skus: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items")
+        .fetch_one(pool)
+        .await?;
+    let total_units: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(qty), 0) FROM items")
+        .fetch_one(pool)
+        .await?;
+    let total_value: f64 =
+        sqlx::query_scalar("SELECT CAST(COALESCE(SUM(qty * cost), 0) AS REAL) FROM items")
+            .fetch_one(pool)
+            .await?;
+    let low_stock: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty > 0 AND qty < min_qty")
+            .fetch_one(pool)
+            .await?;
+    let out_of_stock: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty = 0")
+        .fetch_one(pool)
+        .await?;
     let serialized_units: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(json_array_length(serials)), 0) FROM item_stock WHERE serials IS NOT NULL",
     ).fetch_one(pool).await.unwrap_or(0);
-    let open_pos: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM purchase_orders WHERE status NOT IN ('received', 'cancelled')").fetch_one(pool).await?;
-    let open_sos: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sales_orders WHERE status IN ('open', 'picking')").fetch_one(pool).await?;
-    let pending_transfers: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM transfers WHERE status = 'pending'").fetch_one(pool).await?;
-    let scheduled_counts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM counts WHERE status IN ('scheduled', 'open')").fetch_one(pool).await?;
+    let open_pos: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM purchase_orders WHERE status NOT IN ('received', 'cancelled')",
+    )
+    .fetch_one(pool)
+    .await?;
+    let open_sos: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM sales_orders WHERE status IN ('open', 'picking')")
+            .fetch_one(pool)
+            .await?;
+    let pending_transfers: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM transfers WHERE status = 'pending'")
+            .fetch_one(pool)
+            .await?;
+    let scheduled_counts: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM counts WHERE status IN ('scheduled', 'open')")
+            .fetch_one(pool)
+            .await?;
     Ok(StatusSummary {
         total_skus,
         total_units,

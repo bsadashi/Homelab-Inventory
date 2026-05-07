@@ -1,10 +1,10 @@
 //! /api/transfers — bin-to-bin stock movement records.
 
-use crate::auth::RequireOperator;
-use crate::routes::pagination::PageQuery;
 use crate::audit::log_in_tx;
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Transfer, TransferInput, TransferLine};
+use crate::routes::pagination::PageQuery;
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -17,7 +17,6 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list).post(create))
         .route("/:id", put(update).delete(delete).get(get_one))
 }
-
 
 async fn list(
     State(state): State<AppState>,
@@ -64,13 +63,11 @@ async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Transfer>> {
-    let row = sqlx::query(
-        "SELECT id, from_loc, to_loc, date, status FROM transfers WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let row = sqlx::query("SELECT id, from_loc, to_loc, date, status FROM transfers WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let lines = sqlx::query("SELECT sku, qty FROM transfer_lines WHERE transfer_id = ?")
         .bind(&id)
         .fetch_all(&state.pool)
@@ -96,9 +93,10 @@ async fn create(
     RequireOperator(auth): RequireOperator,
     Json(input): Json<TransferInput>,
 ) -> ApiResult<(StatusCode, Json<Transfer>)> {
-    let id = input.id.clone().unwrap_or_else(|| {
-        format!("TR-{}", chrono::Utc::now().timestamp())
-    });
+    let id = input
+        .id
+        .clone()
+        .unwrap_or_else(|| format!("TR-{}", chrono::Utc::now().timestamp()));
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         "INSERT INTO transfers (id, from_loc, to_loc, date, status) VALUES (?, ?, ?, ?, ?)",
@@ -118,12 +116,19 @@ async fn create(
             .execute(&mut *tx)
             .await?;
     }
-    log_in_tx(&mut tx, &auth.username, "transfer.create", Some(&id), &format!(
-                "Created transfer {} ({} → {})",
-                id,
-                input.from.as_deref().unwrap_or("?"),
-                input.to.as_deref().unwrap_or("?")
-            )).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "transfer.create",
+        Some(&id),
+        &format!(
+            "Created transfer {} ({} → {})",
+            id,
+            input.from.as_deref().unwrap_or("?"),
+            input.to.as_deref().unwrap_or("?")
+        ),
+    )
+    .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -171,7 +176,14 @@ async fn update(
             .execute(&mut *tx)
             .await?;
     }
-    log_in_tx(&mut tx, &auth.username, "transfer.update", Some(&id), &format!("Updated transfer {} → {}", id, input.status)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "transfer.update",
+        Some(&id),
+        &format!("Updated transfer {} → {}", id, input.status),
+    )
+    .await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -189,7 +201,14 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "transfer.delete", Some(&id), &format!("Deleted transfer {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "transfer.delete",
+        Some(&id),
+        &format!("Deleted transfer {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

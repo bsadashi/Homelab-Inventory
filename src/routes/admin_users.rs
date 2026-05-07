@@ -78,8 +78,7 @@ async fn create_user(
     let username = validate_username(&input.username)?;
     let role = Role::from_str(&input.role)
         .map_err(|_| ApiError::BadRequest("role must be admin/operator/viewer".into()))?;
-    let hash = password::hash(&input.password)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let hash = password::hash(&input.password).map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let user = match users::create(&state.pool, &username, &hash, role, "admin").await {
         Ok(u) => u,
         Err(sqlx::Error::Database(db)) if db.is_unique_violation() => {
@@ -87,11 +86,15 @@ async fn create_user(
         }
         Err(e) => return Err(ApiError::Database(e)),
     };
-    audit::log(&state.pool, &auth.username, "user.create", Some(&user.id), &format!(
-                "Created user {} as {}",
-                user.username,
-                role.as_str()
-            )).await.ok();
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "user.create",
+        Some(&user.id),
+        &format!("Created user {} as {}", user.username, role.as_str()),
+    )
+    .await
+    .ok();
     Ok((StatusCode::CREATED, Json(user.into())))
 }
 
@@ -117,8 +120,18 @@ async fn update_role(
     if n == 0 {
         return Err(ApiError::NotFound);
     }
-    let user = users::find_by_id(&state.pool, &id).await?.ok_or(ApiError::NotFound)?;
-    audit::log(&state.pool, &auth.username, "user.role", Some(&user.id), &format!("Set {} to role {}", user.username, role.as_str())).await.ok();
+    let user = users::find_by_id(&state.pool, &id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "user.role",
+        Some(&user.id),
+        &format!("Set {} to role {}", user.username, role.as_str()),
+    )
+    .await
+    .ok();
     Ok(Json(user.into()))
 }
 
@@ -146,9 +159,19 @@ async fn set_disabled(
         // Disabling kills active sessions immediately.
         let _ = sessions::revoke_all_for_user(&state.pool, &id).await;
     }
-    let user = users::find_by_id(&state.pool, &id).await?.ok_or(ApiError::NotFound)?;
-    let kind = if input.disabled { "user.disable" } else { "user.enable" };
-    let verb = if input.disabled { "Disabled" } else { "Re-enabled" };
+    let user = users::find_by_id(&state.pool, &id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let kind = if input.disabled {
+        "user.disable"
+    } else {
+        "user.enable"
+    };
+    let verb = if input.disabled {
+        "Disabled"
+    } else {
+        "Re-enabled"
+    };
     audit::log(
         &state.pool,
         &auth.username,
@@ -172,8 +195,7 @@ async fn reset_password(
     Path(id): Path<String>,
     Json(input): Json<ResetPasswordInput>,
 ) -> ApiResult<StatusCode> {
-    let hash = password::hash(&input.password)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let hash = password::hash(&input.password).map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let n = users::set_password_hash(&state.pool, &id, &hash).await?;
     if n == 0 {
         return Err(ApiError::NotFound);
@@ -181,8 +203,18 @@ async fn reset_password(
     // Invalidate all of the target user's sessions so the new
     // password actually takes effect on the next login.
     let _ = sessions::revoke_all_for_user(&state.pool, &id).await;
-    let user = users::find_by_id(&state.pool, &id).await?.ok_or(ApiError::NotFound)?;
-    audit::log(&state.pool, &auth.username, "user.reset_password", Some(&user.id), &format!("Admin reset password for {}", user.username)).await.ok();
+    let user = users::find_by_id(&state.pool, &id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "user.reset_password",
+        Some(&user.id),
+        &format!("Admin reset password for {}", user.username),
+    )
+    .await
+    .ok();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -196,12 +228,22 @@ async fn delete_user(
             "cannot delete yourself; ask another admin".into(),
         ));
     }
-    let user = users::find_by_id(&state.pool, &id).await?.ok_or(ApiError::NotFound)?;
+    let user = users::find_by_id(&state.pool, &id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let n = users::delete(&state.pool, &id).await?;
     if n == 0 {
         return Err(ApiError::NotFound);
     }
-    audit::log(&state.pool, &auth.username, "user.delete", Some(&id), &format!("Deleted user {}", user.username)).await.ok();
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "user.delete",
+        Some(&id),
+        &format!("Deleted user {}", user.username),
+    )
+    .await
+    .ok();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -210,7 +252,10 @@ fn validate_username(s: &str) -> ApiResult<String> {
     if s.is_empty() || s.len() > 64 {
         return Err(ApiError::BadRequest("username must be 1–64 chars".into()));
     }
-    if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
         return Err(ApiError::BadRequest(
             "username may only contain letters, digits, _, -, .".into(),
         ));
@@ -254,10 +299,18 @@ async fn create_api_key(
         .await?
         .ok_or(ApiError::NotFound)?;
     let created = api_keys::create(&state.pool, &input.user_id, input.label.trim()).await?;
-    audit::log(&state.pool, &auth.username, "api_key.create", Some(&created.id), &format!(
-                "Created API key {} for user {}",
-                created.label, input.user_id
-            )).await.ok();
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "api_key.create",
+        Some(&created.id),
+        &format!(
+            "Created API key {} for user {}",
+            created.label, input.user_id
+        ),
+    )
+    .await
+    .ok();
     Ok((
         StatusCode::CREATED,
         Json(CreateApiKeyResponse {
@@ -277,6 +330,14 @@ async fn revoke_api_key(
     if n == 0 {
         return Err(ApiError::NotFound);
     }
-    audit::log(&state.pool, &auth.username, "api_key.revoke", Some(&id), &format!("Revoked API key {}", id)).await.ok();
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "api_key.revoke",
+        Some(&id),
+        &format!("Revoked API key {}", id),
+    )
+    .await
+    .ok();
     Ok(StatusCode::NO_CONTENT)
 }

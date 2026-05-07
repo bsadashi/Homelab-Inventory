@@ -94,9 +94,21 @@ pub async fn seed_if_empty(pool: &SqlitePool) -> anyhow::Result<bool> {
         .bind(opt_i(it, "qty").unwrap_or(0))
         .bind(opt_i(it, "allocated").unwrap_or(0))
         .bind(opt_s(it, "barcode"))
-        .bind(it.get("variants").filter(|v| !v.is_null()).map(|v| v.to_string()))
-        .bind(it.get("lots").filter(|v| !v.is_null()).map(|v| v.to_string()))
-        .bind(it.get("tags").map(|v| v.to_string()).unwrap_or_else(|| "[]".into()))
+        .bind(
+            it.get("variants")
+                .filter(|v| !v.is_null())
+                .map(|v| v.to_string()),
+        )
+        .bind(
+            it.get("lots")
+                .filter(|v| !v.is_null())
+                .map(|v| v.to_string()),
+        )
+        .bind(
+            it.get("tags")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "[]".into()),
+        )
         .bind(opt_s(it, "img"))
         .bind(opt_s(it, "updated"))
         .execute(&mut *tx)
@@ -254,12 +266,13 @@ pub async fn seed_if_empty(pool: &SqlitePool) -> anyhow::Result<bool> {
 }
 
 fn s(v: &Value, key: &str) -> String {
-    v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string()
-}
-fn opt_s(v: &Value, key: &str) -> Option<String> {
     v.get(key)
         .and_then(|x| x.as_str())
-        .map(|s| s.to_string())
+        .unwrap_or("")
+        .to_string()
+}
+fn opt_s(v: &Value, key: &str) -> Option<String> {
+    v.get(key).and_then(|x| x.as_str()).map(|s| s.to_string())
 }
 fn opt_i(v: &Value, key: &str) -> Option<i64> {
     v.get(key).and_then(|x| x.as_i64())

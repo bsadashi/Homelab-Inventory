@@ -49,22 +49,32 @@ async fn list(
          min_qty, max_qty, qty, allocated, barcode, variants, lots, tags, img, updated \
          FROM items WHERE 1=1",
     );
-    if filter.category.is_some() { sql.push_str(" AND category = ?"); }
-    if filter.supplier.is_some() { sql.push_str(" AND supplier_id = ?"); }
-    if filter.barcode.is_some()  { sql.push_str(" AND barcode = ?"); }
+    if filter.category.is_some() {
+        sql.push_str(" AND category = ?");
+    }
+    if filter.supplier.is_some() {
+        sql.push_str(" AND supplier_id = ?");
+    }
+    if filter.barcode.is_some() {
+        sql.push_str(" AND barcode = ?");
+    }
     // ESCAPE clause lets the user search for literal `%` and `_`
     // without those characters acting as wildcards.
     if filter.q.is_some() {
-        sql.push_str(
-            " AND (sku LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')",
-        );
+        sql.push_str(" AND (sku LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')");
     }
     sql.push_str(" ORDER BY sku LIMIT ? OFFSET ?");
 
     let mut q = sqlx::query(&sql);
-    if let Some(v) = &filter.category { q = q.bind(v); }
-    if let Some(v) = &filter.supplier { q = q.bind(v); }
-    if let Some(v) = &filter.barcode  { q = q.bind(v); }
+    if let Some(v) = &filter.category {
+        q = q.bind(v);
+    }
+    if let Some(v) = &filter.supplier {
+        q = q.bind(v);
+    }
+    if let Some(v) = &filter.barcode {
+        q = q.bind(v);
+    }
     if let Some(v) = &filter.q {
         let pat = format!("%{}%", escape_like(v));
         q = q.bind(pat.clone()).bind(pat);
@@ -80,10 +90,7 @@ async fn list(
     Ok(Json(items))
 }
 
-async fn get_one(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> ApiResult<Json<Item>> {
+async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Item>> {
     let row = sqlx::query(
         "SELECT id, sku, name, category, brand, supplier_id, cost, price, unit, \
          min_qty, max_qty, qty, allocated, barcode, variants, lots, tags, img, updated \
@@ -115,7 +122,14 @@ async fn create(
     let mut tx = state.pool.begin().await?;
     insert_item(&mut tx, &id, &input).await?;
     write_stock(&mut tx, &id, &input.loc).await?;
-    log_in_tx(&mut tx, &auth.username, "item.create", Some(&id), &format!("Created item {} ({})", input.name, input.sku)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "item.create",
+        Some(&id),
+        &format!("Created item {} ({})", input.name, input.sku),
+    )
+    .await?;
     tx.commit().await?;
 
     let mut item = input_to_item(&id, &input);
@@ -152,8 +166,18 @@ async fn update(
     .bind(input.qty)
     .bind(input.allocated)
     .bind(&input.barcode)
-    .bind(input.variants.as_ref().map(|v| serde_json::to_string(v).unwrap_or_default()))
-    .bind(input.lots.as_ref().map(|v| serde_json::to_string(v).unwrap_or_default()))
+    .bind(
+        input
+            .variants
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
+    .bind(
+        input
+            .lots
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
     .bind(serde_json::to_string(&input.tags).unwrap_or_else(|_| "[]".into()))
     .bind(&input.img)
     .bind(chrono::Utc::now().date_naive().to_string())
@@ -171,7 +195,14 @@ async fn update(
         .await?;
     write_stock(&mut tx, &id, &input.loc).await?;
 
-    log_in_tx(&mut tx, &auth.username, "item.update", Some(&id), &format!("Updated item {}", input.sku)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "item.update",
+        Some(&id),
+        &format!("Updated item {}", input.sku),
+    )
+    .await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -189,7 +220,14 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "item.delete", Some(&id), &format!("Deleted item {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "item.delete",
+        Some(&id),
+        &format!("Deleted item {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -231,8 +269,18 @@ async fn insert_item<'a>(
     .bind(input.qty)
     .bind(input.allocated)
     .bind(&input.barcode)
-    .bind(input.variants.as_ref().map(|v| serde_json::to_string(v).unwrap_or_default()))
-    .bind(input.lots.as_ref().map(|v| serde_json::to_string(v).unwrap_or_default()))
+    .bind(
+        input
+            .variants
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
+    .bind(
+        input
+            .lots
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
     .bind(serde_json::to_string(&input.tags).unwrap_or_else(|_| "[]".into()))
     .bind(&input.img)
     .bind(chrono::Utc::now().date_naive().to_string())
@@ -279,17 +327,19 @@ async fn write_stock<'a>(
 }
 
 async fn load_stock_for(pool: &sqlx::SqlitePool, id: &str) -> ApiResult<Vec<StockLine>> {
-    let rows = sqlx::query(
-        "SELECT location_id, bin, qty, serials FROM item_stock WHERE item_id = ?",
-    )
-    .bind(id)
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT location_id, bin, qty, serials FROM item_stock WHERE item_id = ?")
+            .bind(id)
+            .fetch_all(pool)
+            .await?;
     Ok(rows
         .into_iter()
         .map(|r| StockLine {
             l: r.get("location_id"),
-            b: r.try_get::<Option<String>, _>("bin").ok().flatten().unwrap_or_default(),
+            b: r.try_get::<Option<String>, _>("bin")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
             q: r.try_get("qty").unwrap_or(0),
             serial: r
                 .try_get::<Option<String>, _>("serials")
@@ -317,12 +367,12 @@ async fn load_all_stock<'a>(
     if id_list.is_empty() {
         return Ok(Default::default());
     }
-    let mut out: std::collections::HashMap<String, Vec<StockLine>> = std::collections::HashMap::new();
+    let mut out: std::collections::HashMap<String, Vec<StockLine>> =
+        std::collections::HashMap::new();
     for chunk in id_list.chunks(SQLITE_IN_CHUNK) {
         // Build placeholders for an IN clause; SQLite doesn't take
         // arrays directly. One ? per id, one chunk per round trip.
-        let placeholders = std::iter::repeat("?")
-            .take(chunk.len())
+        let placeholders = std::iter::repeat_n("?", chunk.len())
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!(
@@ -338,7 +388,10 @@ async fn load_all_stock<'a>(
             let item_id: String = r.get("item_id");
             out.entry(item_id).or_default().push(StockLine {
                 l: r.get("location_id"),
-                b: r.try_get::<Option<String>, _>("bin").ok().flatten().unwrap_or_default(),
+                b: r.try_get::<Option<String>, _>("bin")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
                 q: r.try_get("qty").unwrap_or(0),
                 serial: r
                     .try_get::<Option<String>, _>("serials")

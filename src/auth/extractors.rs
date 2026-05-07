@@ -56,6 +56,18 @@ macro_rules! role_extractor {
     };
 }
 
-role_extractor!(RequireViewer,   Role::Viewer,   "Reads only — every authed user is at least Viewer.");
-role_extractor!(RequireOperator, Role::Operator, "Allowed to mutate inventory.");
-role_extractor!(RequireAdmin,    Role::Admin,    "Allowed to manage users + reach /api/admin/*.");
+role_extractor!(
+    RequireViewer,
+    Role::Viewer,
+    "Reads only — every authed user is at least Viewer."
+);
+role_extractor!(
+    RequireOperator,
+    Role::Operator,
+    "Allowed to mutate inventory."
+);
+role_extractor!(
+    RequireAdmin,
+    Role::Admin,
+    "Allowed to manage users + reach /api/admin/*."
+);

@@ -1,7 +1,7 @@
 //! /api/locations — physical hierarchy (rack → shelf → bin).
 
-use crate::auth::RequireOperator;
 use crate::audit::log_in_tx;
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Location, LocationInput};
 use crate::state::AppState;
@@ -19,11 +19,10 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<Location>>> {
-    let rows = sqlx::query(
-        "SELECT id, code, name, type, parent, bins FROM locations ORDER BY code",
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT id, code, name, type, parent, bins FROM locations ORDER BY code")
+            .fetch_all(&state.pool)
+            .await?;
     let out = rows
         .into_iter()
         .map(|r| Location {
@@ -42,13 +41,11 @@ async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Location>> {
-    let row = sqlx::query(
-        "SELECT id, code, name, type, parent, bins FROM locations WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let row = sqlx::query("SELECT id, code, name, type, parent, bins FROM locations WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     Ok(Json(Location {
         id: row.get("id"),
         code: row.get("code"),
@@ -67,9 +64,7 @@ async fn create(
     if input.code.trim().is_empty() || input.name.trim().is_empty() {
         return Err(ApiError::BadRequest("code and name are required".into()));
     }
-    let id = input
-        .id
-        .unwrap_or_else(|| format!("L-{}", short_id()));
+    let id = input.id.unwrap_or_else(|| format!("L-{}", short_id()));
     let bins_json = serde_json::to_string(&input.bins)?;
 
     let mut tx = state.pool.begin().await?;
@@ -85,7 +80,14 @@ async fn create(
     .execute(&mut *tx)
     .await
     .map_err(map_unique)?;
-    log_in_tx(&mut tx, &auth.username, "location.create", Some(&id), &format!("Created location {} ({})", input.name, input.code)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "location.create",
+        Some(&id),
+        &format!("Created location {} ({})", input.name, input.code),
+    )
+    .await?;
     tx.commit().await?;
 
     Ok((
@@ -125,7 +127,14 @@ async fn update(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "location.update", Some(&id), &format!("Updated location {}", input.code)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "location.update",
+        Some(&id),
+        &format!("Updated location {}", input.code),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(Location {
         id,
@@ -157,7 +166,14 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "location.delete", Some(&id), &format!("Deleted location {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "location.delete",
+        Some(&id),
+        &format!("Deleted location {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

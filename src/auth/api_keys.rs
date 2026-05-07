@@ -19,24 +19,18 @@ pub struct CreatedApiKey {
     pub plaintext: String,
 }
 
-pub async fn create(
-    pool: &SqlitePool,
-    user_id: &str,
-    label: &str,
-) -> sqlx::Result<CreatedApiKey> {
+pub async fn create(pool: &SqlitePool, user_id: &str, label: &str) -> sqlx::Result<CreatedApiKey> {
     let id = format!("ak-{}", Uuid::new_v4().simple());
     let token_body = random_token();
     let plaintext = format!("rl_{}", token_body);
     let key_hash = hash_token(&plaintext);
-    sqlx::query(
-        "INSERT INTO api_keys (id, label, user_id, key_hash) VALUES (?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(label)
-    .bind(user_id)
-    .bind(&key_hash)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO api_keys (id, label, user_id, key_hash) VALUES (?, ?, ?, ?)")
+        .bind(&id)
+        .bind(label)
+        .bind(user_id)
+        .bind(&key_hash)
+        .execute(pool)
+        .await?;
     Ok(CreatedApiKey {
         id,
         label: label.to_string(),
@@ -65,25 +59,31 @@ pub struct ApiKeySummary {
 }
 
 pub async fn list(pool: &SqlitePool) -> sqlx::Result<Vec<ApiKeySummary>> {
-    let rows: Vec<(String, String, String, String, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            r#"SELECT id, label, user_id, created_at, last_used_at, revoked_at
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"SELECT id, label, user_id, created_at, last_used_at, revoked_at
                FROM api_keys ORDER BY created_at DESC"#,
-        )
-        .fetch_all(pool)
-        .await?;
+    )
+    .fetch_all(pool)
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, label, user_id, created_at, last_used_at, revoked_at)| {
-            ApiKeySummary {
+        .map(
+            |(id, label, user_id, created_at, last_used_at, revoked_at)| ApiKeySummary {
                 id,
                 label,
                 user_id,
                 created_at,
                 last_used_at,
                 revoked_at,
-            }
-        })
+            },
+        )
         .collect())
 }
 

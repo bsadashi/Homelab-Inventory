@@ -82,26 +82,24 @@ pub async fn revoke_all_for_user(pool: &SqlitePool, user_id: &str) -> sqlx::Resu
 /// Returns `None` for any non-match (unknown, expired, deleted user).
 pub async fn resolve(pool: &SqlitePool, plaintext: &str) -> sqlx::Result<Option<AuthIdentity>> {
     let token_hash = hash_token(plaintext);
-    let row: Option<(String, String, String, String, String, i64)> =
-        sqlx::query_as(
-            r#"SELECT s.user_id, s.expires_at, u.username, u.role, u.disabled || '', u.disabled
+    let row: Option<(String, String, String, String, String, i64)> = sqlx::query_as(
+        r#"SELECT s.user_id, s.expires_at, u.username, u.role, u.disabled || '', u.disabled
                FROM sessions s
                JOIN users u ON u.id = s.user_id
                WHERE s.token_hash = ?"#,
-        )
-        .bind(&token_hash)
-        .fetch_optional(pool)
-        .await?;
+    )
+    .bind(&token_hash)
+    .fetch_optional(pool)
+    .await?;
     let Some((user_id, expires_at, username, role_str, _, disabled)) = row else {
         return Ok(None);
     };
     if disabled != 0 {
         return Ok(None);
     }
-    if let Ok(exp) = DateTime::parse_from_str(
-        &format!("{} +0000", expires_at),
-        "%Y-%m-%d %H:%M:%S %z",
-    ) {
+    if let Ok(exp) =
+        DateTime::parse_from_str(&format!("{} +0000", expires_at), "%Y-%m-%d %H:%M:%S %z")
+    {
         if exp < Utc::now() {
             // Expired — clean up opportunistically.
             let _ = sqlx::query("DELETE FROM sessions WHERE token_hash = ?")

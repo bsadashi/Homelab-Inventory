@@ -1,0 +1,5 @@
+# Project-wide rustfmt config.
+# Keep this minimal; rustfmt's defaults are the right starting point for a
+# single-team codebase. We only override what's worth defending in review.
+edition = "2021"
+max_width = 100

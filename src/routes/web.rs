@@ -67,7 +67,10 @@ async fn index(State(state): State<AppState>) -> ApiResult<Response> {
     let html = render_index(&state).await?;
     Ok((
         [
-            (header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8")),
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            ),
             (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
         ],
         html,
@@ -85,9 +88,8 @@ async fn login_page() -> Response {
 }
 
 async fn render_index(state: &AppState) -> ApiResult<String> {
-    let template = load_template(state).map_err(|e| {
-        crate::error::ApiError::Other(anyhow::anyhow!("template load failed: {e}"))
-    })?;
+    let template = load_template(state)
+        .map_err(|e| crate::error::ApiError::Other(anyhow::anyhow!("template load failed: {e}")))?;
     let snapshot = build_bootstrap(&state.pool).await?;
     let payload = serde_json::to_string(&snapshot)?;
     let injection = format!(
@@ -147,10 +149,7 @@ async fn favicon() -> Response {
     StatusCode::NO_CONTENT.into_response()
 }
 
-async fn asset(
-    State(state): State<AppState>,
-    AxumPath(path): AxumPath<String>,
-) -> Response {
+async fn asset(State(state): State<AppState>, AxumPath(path): AxumPath<String>) -> Response {
     // Block path traversal explicitly — we never need ".." in asset paths.
     if path.contains("..") || path.starts_with('/') {
         return StatusCode::BAD_REQUEST.into_response();

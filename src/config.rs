@@ -107,9 +107,9 @@ impl Config {
         };
 
         let allow_origin = match std::env::var("RACKLOG_ALLOW_ORIGIN").as_deref() {
-            Ok(v) if !v.is_empty() => AllowOrigin::List(
-                v.split(',').map(|s| s.trim().to_string()).collect(),
-            ),
+            Ok(v) if !v.is_empty() => {
+                AllowOrigin::List(v.split(',').map(|s| s.trim().to_string()).collect())
+            }
             _ => AllowOrigin::SameOrigin,
         };
 

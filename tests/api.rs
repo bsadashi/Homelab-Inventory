@@ -75,7 +75,10 @@ async fn audit_chain_verifies_after_seed() {
     expect_ok(&resp);
     let body = json(resp).await;
     assert_eq!(body["valid"], true);
-    assert!(body["entries"].as_i64().unwrap() >= 12, "seed activity replayed");
+    assert!(
+        body["entries"].as_i64().unwrap() >= 12,
+        "seed activity replayed"
+    );
     assert!(body["head"].is_string(), "head hash exposed");
 }
 
@@ -117,7 +120,10 @@ async fn tampering_with_audit_log_breaks_chain() {
 
     let body = json(h.get("/api/activity/verify").await).await;
     assert_eq!(body["valid"], false, "tamper must be detected");
-    assert!(body["broken_at"].is_number(), "broken_at points at the bad row");
+    assert!(
+        body["broken_at"].is_number(),
+        "broken_at points at the bad row"
+    );
 }
 
 // ---- catalog CRUD ------------------------------------------------------
@@ -294,7 +300,10 @@ async fn path_traversal_is_rejected() {
     // Either 400 (our explicit guard) or 404 (axum normalises) — both
     // indicate refusal to serve files outside the asset bundle.
     assert!(
-        matches!(resp.status(), StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND),
+        matches!(
+            resp.status(),
+            StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND
+        ),
         "got {}",
         resp.status()
     );
@@ -498,14 +507,16 @@ async fn csv_import_rejects_missing_required_columns() {
 mod sku_stub {
     use racklog::sku_sync::{LookupError, LookupResult, Provider};
 
-    pub struct StubProvider {
+    pub(crate) struct StubProvider {
         pub name: &'static str,
         pub returns: Vec<LookupResult>,
     }
 
     #[async_trait::async_trait]
     impl Provider for StubProvider {
-        fn name(&self) -> &'static str { self.name }
+        fn name(&self) -> &'static str {
+            self.name
+        }
         async fn lookup(&self, _barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
             Ok(self.returns.clone())
         }
@@ -527,12 +538,11 @@ async fn lookup_falls_back_to_external_provider() {
     let mut hit = LookupResult::new("stub", "999999999999");
     hit.name = Some("Mystery Widget".into());
     hit.brand = Some("Stub Co".into());
-    let providers: Vec<Box<dyn racklog::sku_sync::Provider>> = vec![Box::new(
-        sku_stub::StubProvider {
+    let providers: Vec<Box<dyn racklog::sku_sync::Provider>> =
+        vec![Box::new(sku_stub::StubProvider {
             name: "stub",
             returns: vec![hit],
-        },
-    )];
+        })];
     let h = Harness::boot_with_providers(providers).await;
 
     let body = json(h.get("/api/lookup/999999999999").await).await;
@@ -582,7 +592,11 @@ async fn pos_paginates() {
     // Different page → different first item
     assert_ne!(first[0]["id"], second[0]["id"]);
     let third = json(h.get("/api/pos?limit=10&offset=6").await).await;
-    assert_eq!(third.as_array().unwrap().len(), 1, "tail page should have 1");
+    assert_eq!(
+        third.as_array().unwrap().len(),
+        1,
+        "tail page should have 1"
+    );
 }
 
 #[tokio::test]
@@ -608,7 +622,10 @@ async fn body_size_limit_rejects_oversized_csv() {
     while huge.len() < 3 * 1024 * 1024 {
         huge.push_str("AAAAAA,padding-row-with-a-long-comment-to-pump-bytes\n");
     }
-    assert!(huge.len() > 2 * 1024 * 1024, "test fixture must exceed limit");
+    assert!(
+        huge.len() > 2 * 1024 * 1024,
+        "test fixture must exceed limit"
+    );
     let resp = h.post_csv("/api/exports/items.csv", &huge).await;
     assert_eq!(
         resp.status(),
@@ -637,15 +654,27 @@ async fn admin_stats_lists_every_table() {
     let h = Harness::boot().await;
     let body = json(h.get("/api/admin/stats").await).await;
     let names: Vec<String> = body["tables"]
-        .as_array().unwrap()
+        .as_array()
+        .unwrap()
         .iter()
         .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
     for expected in [
-        "items", "item_stock", "locations", "suppliers",
-        "purchase_orders", "sales_orders", "transfers", "counts", "activity_log",
+        "items",
+        "item_stock",
+        "locations",
+        "suppliers",
+        "purchase_orders",
+        "sales_orders",
+        "transfers",
+        "counts",
+        "activity_log",
     ] {
-        assert!(names.contains(&expected.to_string()), "missing {}", expected);
+        assert!(
+            names.contains(&expected.to_string()),
+            "missing {}",
+            expected
+        );
     }
     // database_bytes should be >0 once something has been written.
     assert!(body["database_bytes"].as_u64().unwrap() > 0);
@@ -663,10 +692,14 @@ async fn admin_integrity_runs_pragma_and_chain_check() {
 #[tokio::test]
 async fn admin_vacuum_requires_confirmation() {
     let h = Harness::boot().await;
-    let blocked = h.post_json("/api/admin/vacuum", &serde_json::json!({})).await;
+    let blocked = h
+        .post_json("/api/admin/vacuum", &serde_json::json!({}))
+        .await;
     expect_status(&blocked, StatusCode::BAD_REQUEST);
 
-    let ok = h.post_json("/api/admin/vacuum?confirm=1", &serde_json::json!({})).await;
+    let ok = h
+        .post_json("/api/admin/vacuum?confirm=1", &serde_json::json!({}))
+        .await;
     expect_ok(&ok);
     let body = json(ok).await;
     assert_eq!(body["operation"], "vacuum");
@@ -676,7 +709,12 @@ async fn admin_vacuum_requires_confirmation() {
 #[tokio::test]
 async fn admin_wal_checkpoint_runs() {
     let h = Harness::boot().await;
-    let resp = h.post_json("/api/admin/wal_checkpoint?confirm=1", &serde_json::json!({})).await;
+    let resp = h
+        .post_json(
+            "/api/admin/wal_checkpoint?confirm=1",
+            &serde_json::json!({}),
+        )
+        .await;
     expect_ok(&resp);
     let body = json(resp).await;
     assert_eq!(body["operation"], "wal_checkpoint");
@@ -685,16 +723,22 @@ async fn admin_wal_checkpoint_runs() {
 #[tokio::test]
 async fn admin_retain_activity_dry_run_doesnt_delete() {
     let h = Harness::boot().await;
-    let before = json(h.get("/api/admin/info").await).await["audit_entries"].as_i64().unwrap();
-    let resp = h.post_json(
-        "/api/admin/retain_activity?days=1&dry_run=1",
-        &serde_json::json!({}),
-    ).await;
+    let before = json(h.get("/api/admin/info").await).await["audit_entries"]
+        .as_i64()
+        .unwrap();
+    let resp = h
+        .post_json(
+            "/api/admin/retain_activity?days=1&dry_run=1",
+            &serde_json::json!({}),
+        )
+        .await;
     expect_ok(&resp);
     let body = json(resp).await;
     assert_eq!(body["dry_run"], true);
     assert_eq!(body["deleted"], 0);
-    let after = json(h.get("/api/admin/info").await).await["audit_entries"].as_i64().unwrap();
+    let after = json(h.get("/api/admin/info").await).await["audit_entries"]
+        .as_i64()
+        .unwrap();
     assert_eq!(before, after, "dry run must not mutate");
 }
 
@@ -703,18 +747,24 @@ async fn admin_retain_activity_prunes_old_entries() {
     let h = Harness::boot().await;
     // Backdate every existing row so the retention cutoff catches them.
     sqlx::query("UPDATE activity_log SET ts = '2000-01-01 00:00:00'")
-        .execute(&h.pool).await.unwrap();
+        .execute(&h.pool)
+        .await
+        .unwrap();
 
-    let resp = h.post_json(
-        "/api/admin/retain_activity?days=30&confirm=1",
-        &serde_json::json!({}),
-    ).await;
+    let resp = h
+        .post_json(
+            "/api/admin/retain_activity?days=30&confirm=1",
+            &serde_json::json!({}),
+        )
+        .await;
     expect_ok(&resp);
     let body = json(resp).await;
     assert!(body["deleted"].as_i64().unwrap() > 0);
     // The retention itself appended a new audit entry — it should be present.
     let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM activity_log")
-        .fetch_one(&h.pool).await.unwrap();
+        .fetch_one(&h.pool)
+        .await
+        .unwrap();
     assert_eq!(after, 1, "only the retention-marker row should remain");
 }
 
@@ -760,18 +810,30 @@ async fn item_search_escapes_like_wildcards() {
     // but would match if '%' were treated as a wildcard.
     let h = Harness::boot_with(None, false).await;
     sqlx::query("INSERT INTO items (id, sku, name, category) VALUES (?, ?, ?, 'Tools')")
-        .bind("I-PCT").bind("PCT").bind("Off 100% widget")
-        .execute(&h.pool).await.unwrap();
+        .bind("I-PCT")
+        .bind("PCT")
+        .bind("Off 100% widget")
+        .execute(&h.pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO items (id, sku, name, category) VALUES (?, ?, ?, 'Tools')")
-        .bind("I-NO").bind("NO").bind("Off 100 widget")
-        .execute(&h.pool).await.unwrap();
+        .bind("I-NO")
+        .bind("NO")
+        .bind("Off 100 widget")
+        .execute(&h.pool)
+        .await
+        .unwrap();
 
     // Searching for the literal `100%` must match only the row that
     // actually has '%' in its name. Without escaping, the '%' acts as
     // a wildcard and both rows would match.
     let body = json(h.get("/api/items?q=100%25").await).await;
     let arr = body.as_array().unwrap();
-    assert_eq!(arr.len(), 1, "literal `%` should match only the row containing it");
+    assert_eq!(
+        arr.len(),
+        1,
+        "literal `%` should match only the row containing it"
+    );
     assert_eq!(arr[0]["id"], "I-PCT");
 }
 
@@ -790,7 +852,9 @@ async fn list_items_handles_more_than_sqlite_param_limit() {
             .bind(format!("I-CHUNK-{:04}", i))
             .bind(format!("CHUNK-{:04}", i))
             .bind(format!("Item {}", i))
-            .execute(&mut *tx).await.unwrap();
+            .execute(&mut *tx)
+            .await
+            .unwrap();
     }
     tx.commit().await.unwrap();
 

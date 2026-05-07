@@ -79,8 +79,8 @@ impl DigiKey {
         language: String,
         currency: String,
     ) -> Self {
-        let base_url = std::env::var("DIGIKEY_BASE_URL")
-            .unwrap_or_else(|_| "https://api.digikey.com".into());
+        let base_url =
+            std::env::var("DIGIKEY_BASE_URL").unwrap_or_else(|_| "https://api.digikey.com".into());
         let token_url = format!("{}/v1/oauth2/token", base_url);
         Self {
             client_id,
@@ -133,7 +133,9 @@ impl DigiKey {
 
 #[async_trait::async_trait]
 impl Provider for DigiKey {
-    fn name(&self) -> &'static str { "digikey" }
+    fn name(&self) -> &'static str {
+        "digikey"
+    }
 
     async fn lookup(&self, barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
         let barcode = validate_barcode(barcode)?;
@@ -145,10 +147,7 @@ impl Provider for DigiKey {
         let parsed: BarcodeResponse = loop {
             attempt += 1;
             let token = self.token().await?;
-            let url = format!(
-                "{}/products/v4/search/barcode/{}",
-                self.base_url, barcode
-            );
+            let url = format!("{}/products/v4/search/barcode/{}", self.base_url, barcode);
             let resp = http()?
                 .get(&url)
                 .bearer_auth(&token)
@@ -180,14 +179,13 @@ impl Provider for DigiKey {
                     let body = resp.text().await.unwrap_or_default();
                     let preview: String = body.chars().take(200).collect();
                     tracing::warn!(status = s, body = %preview, "digikey error response");
-                    return Err(LookupError::Provider(format!(
-                        "digikey: status {}",
-                        s
-                    )));
+                    return Err(LookupError::Provider(format!("digikey: status {}", s)));
                 }
             }
         };
-        let Some(p) = parsed.product else { return Ok(Vec::new()); };
+        let Some(p) = parsed.product else {
+            return Ok(Vec::new());
+        };
 
         let mut r = LookupResult::new("digikey", barcode.to_string());
         r.mpn = p.manufacturer_product_number;

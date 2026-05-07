@@ -10,14 +10,11 @@ mod common;
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use common::{
-    body_string, expect_ok, expect_status, extract_session_cookie,
-    json, raw_get, raw_post, signup_user, Harness,
+    body_string, expect_ok, expect_status, extract_session_cookie, json, raw_get, raw_post,
+    signup_user, Harness,
 };
 use serde_json::json as j;
 use tower::util::ServiceExt;
-
-
-
 
 #[tokio::test]
 async fn pre_bootstrap_lets_anyone_in_then_first_signup_becomes_admin() {
@@ -27,10 +24,15 @@ async fn pre_bootstrap_lets_anyone_in_then_first_signup_becomes_admin() {
     expect_ok(&resp);
 
     // First signup → admin.
-    let resp = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::CREATED);
     let cookie = extract_session_cookie(&resp).expect("session cookie set");
     let body = json(resp).await;
@@ -51,30 +53,50 @@ async fn pre_bootstrap_lets_anyone_in_then_first_signup_becomes_admin() {
 #[tokio::test]
 async fn second_signup_requires_open_signup_env() {
     let h = Harness::boot_with(None, false).await;
-    let _ = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
+    let _ = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
     // Second signup without RACKLOG_OPEN_SIGNUP → 403.
-    let resp = raw_post(&h, "/api/auth/signup", j!({
-        "username": "bob",
-        "password": "anothergoodone"
-    })).await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "bob",
+            "password": "anothergoodone"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
 async fn login_logout_round_trip() {
     let h = Harness::boot_with(None, false).await;
-    let _ = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
+    let _ = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
 
-    let resp = raw_post(&h, "/api/auth/login", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/login",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
     expect_ok(&resp);
     let cookie = extract_session_cookie(&resp).expect("session cookie set");
 
@@ -83,14 +105,19 @@ async fn login_logout_round_trip() {
     assert_eq!(me["user"]["username"], "alice");
 
     // Logout invalidates the session.
-    let logout = h.router.clone().oneshot(
-        Request::builder()
-            .method("POST")
-            .uri("/api/auth/logout")
-            .header(header::COOKIE, &cookie)
-            .body(Body::empty())
-            .unwrap(),
-    ).await.unwrap();
+    let logout = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/logout")
+                .header(header::COOKIE, &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     expect_status(&logout, StatusCode::NO_CONTENT);
 
     // The cookie no longer authenticates.
@@ -101,21 +128,36 @@ async fn login_logout_round_trip() {
 #[tokio::test]
 async fn login_rejects_wrong_password() {
     let h = Harness::boot_with(None, false).await;
-    let _ = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
-    let resp = raw_post(&h, "/api/auth/login", j!({
-        "username": "alice",
-        "password": "WRONG"
-    })).await;
+    let _ = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/login",
+        j!({
+            "username": "alice",
+            "password": "WRONG"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::UNAUTHORIZED);
 
     // Same status for unknown user (no enumeration leak).
-    let resp = raw_post(&h, "/api/auth/login", j!({
-        "username": "ghost",
-        "password": "irrelevant"
-    })).await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/login",
+        j!({
+            "username": "ghost",
+            "password": "irrelevant"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::UNAUTHORIZED);
 }
 
@@ -123,16 +165,26 @@ async fn login_rejects_wrong_password() {
 async fn signup_validates_username_and_password() {
     let h = Harness::boot_with(None, false).await;
     // Bad username chars.
-    let resp = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice and bob",
-        "password": "correcthorse"
-    })).await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice and bob",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::BAD_REQUEST);
     // Short password.
-    let resp = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice",
-        "password": "short"
-    })).await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice",
+            "password": "short"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::BAD_REQUEST);
 }
 
@@ -148,15 +200,24 @@ async fn me_returns_bootstrap_open_when_no_users() {
 #[tokio::test]
 async fn signup_writes_audit_entry() {
     let h = Harness::boot_with(None, false).await;
-    let resp = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
     let cookie = extract_session_cookie(&resp).expect("session cookie");
     // Use the cookie to read the (now-protected) activity log.
     let entries = json(raw_get(&h, "/api/activity", Some(&cookie)).await).await;
     assert!(
-        entries.as_array().unwrap().iter().any(|e| e["type"] == "auth.signup" && e["user"] == "alice"),
+        entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "auth.signup" && e["user"] == "alice"),
         "expected an auth.signup row by alice; got {:?}",
         entries
     );
@@ -166,11 +227,13 @@ async fn signup_writes_audit_entry() {
 
 // ---- role gates --------------------------------------------------------
 
-
 async fn set_role(h: &Harness, username: &str, role: &str) {
     sqlx::query("UPDATE users SET role = ? WHERE username = ?")
-        .bind(role).bind(username)
-        .execute(&h.pool).await.unwrap();
+        .bind(role)
+        .bind(username)
+        .execute(&h.pool)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -181,15 +244,25 @@ async fn viewer_cannot_write() {
     let viewer_cookie = signup_user(&h, "bob", "anothergoodone").await;
 
     // Bob is a viewer → 403 on POST /api/items.
-    let resp = h.router.clone().oneshot(
-        Request::builder()
-            .method("POST").uri("/api/items")
-            .header(header::COOKIE, &viewer_cookie)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&j!({
-                "sku": "VIEWER-TEST", "name": "Forbidden", "cat": "Tools"
-            })).unwrap())).unwrap(),
-    ).await.unwrap();
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/items")
+                .header(header::COOKIE, &viewer_cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&j!({
+                        "sku": "VIEWER-TEST", "name": "Forbidden", "cat": "Tools"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     expect_status(&resp, StatusCode::FORBIDDEN);
 
     // Reads are fine.
@@ -205,25 +278,42 @@ async fn operator_can_write_but_not_admin() {
     set_role(&h, "bob", "operator").await;
 
     // POST /api/items succeeds.
-    let resp = h.router.clone().oneshot(
-        Request::builder()
-            .method("POST").uri("/api/items")
-            .header(header::COOKIE, &op_cookie)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&j!({
-                "sku": "OP-TEST", "name": "Operator can write", "cat": "Tools"
-            })).unwrap())).unwrap(),
-    ).await.unwrap();
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/items")
+                .header(header::COOKIE, &op_cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&j!({
+                        "sku": "OP-TEST", "name": "Operator can write", "cat": "Tools"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     expect_status(&resp, StatusCode::CREATED);
 
     // POST /api/admin/vacuum?confirm=1 returns 403.
-    let resp = h.router.clone().oneshot(
-        Request::builder()
-            .method("POST").uri("/api/admin/vacuum?confirm=1")
-            .header(header::COOKIE, &op_cookie)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from("{}")).unwrap(),
-    ).await.unwrap();
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/admin/vacuum?confirm=1")
+                .header(header::COOKIE, &op_cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     expect_status(&resp, StatusCode::FORBIDDEN);
 }
 
@@ -233,15 +323,25 @@ async fn audit_log_records_real_caller_username() {
     let admin_cookie = signup_user(&h, "alice", "correcthorse").await;
 
     // Admin creates an item.
-    let _ = h.router.clone().oneshot(
-        Request::builder()
-            .method("POST").uri("/api/items")
-            .header(header::COOKIE, &admin_cookie)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&j!({
-                "sku": "AUDIT-TEST", "name": "Audited", "cat": "Tools"
-            })).unwrap())).unwrap(),
-    ).await.unwrap();
+    let _ = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/items")
+                .header(header::COOKIE, &admin_cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&j!({
+                        "sku": "AUDIT-TEST", "name": "Audited", "cat": "Tools"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
 
     let entries = json(raw_get(&h, "/api/activity", Some(&admin_cookie)).await).await;
     let arr = entries.as_array().unwrap();
@@ -255,18 +355,32 @@ async fn audit_log_records_real_caller_username() {
 #[tokio::test]
 async fn login_uses_real_username_in_audit() {
     let h = Harness::boot_with(None, false).await;
-    let _ = raw_post(&h, "/api/auth/signup", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
-    let resp = raw_post(&h, "/api/auth/login", j!({
-        "username": "alice",
-        "password": "correcthorse"
-    })).await;
+    let _ = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
+    let resp = raw_post(
+        &h,
+        "/api/auth/login",
+        j!({
+            "username": "alice",
+            "password": "correcthorse"
+        }),
+    )
+    .await;
     let cookie = extract_session_cookie(&resp).expect("session cookie");
     let entries = json(raw_get(&h, "/api/activity", Some(&cookie)).await).await;
     assert!(
-        entries.as_array().unwrap().iter().any(|e| e["type"] == "auth.login" && e["user"] == "alice"),
+        entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "auth.login" && e["user"] == "alice"),
         "expected auth.login row by alice"
     );
     let _ = body_string;

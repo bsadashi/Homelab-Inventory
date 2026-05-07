@@ -206,7 +206,10 @@ async fn full_ops_workflow() {
     // ── 9. audit chain verification ─────────────────────────────
     let chain = json(h.get("/api/activity/verify").await).await;
     assert_eq!(chain["valid"], true, "chain should be valid: {:?}", chain);
-    assert!(chain["entries"].as_i64().unwrap() >= 9, "expected ≥9 audit rows");
+    assert!(
+        chain["entries"].as_i64().unwrap() >= 9,
+        "expected ≥9 audit rows"
+    );
     assert_eq!(chain["version"], 2);
 
     // ── 10. dashboard stats reflect everything ──────────────────
@@ -240,8 +243,7 @@ async fn full_ops_workflow() {
     assert_eq!(integrity["sqlite_ok"], true);
     assert_eq!(integrity["audit_chain_valid"], true);
 
-    let vacuum =
-        json(h.post_json("/api/admin/vacuum?confirm=1", &j!({})).await).await;
+    let vacuum = json(h.post_json("/api/admin/vacuum?confirm=1", &j!({})).await).await;
     assert_eq!(vacuum["ok"], true);
 
     let wal = json(

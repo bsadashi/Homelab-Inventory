@@ -6,7 +6,12 @@
 //! the shared harness once per test crate, and no single test crate
 //! exercises every helper. Keeping the warnings on would force every
 //! crate to import every helper just to silence them.
-#![allow(dead_code)]
+//!
+//! `unreachable_pub` is allowed because helpers are reached through
+//! `mod common;` from each test crate — they aren't part of the lib
+//! crate's pub surface, so the lint's "consider pub(crate)" advice
+//! doesn't apply.
+#![allow(dead_code, unreachable_pub)]
 
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Request, Response, StatusCode};
@@ -98,52 +103,62 @@ impl Harness {
     }
 
     pub async fn get(&self, path: &str) -> Response<Body> {
-        self.send(Request::builder()
-            .method("GET")
-            .uri(path)
-            .header(header::ACCEPT, "application/json")
-            .body(Body::empty())
-            .unwrap())
-            .await
+        self.send(
+            Request::builder()
+                .method("GET")
+                .uri(path)
+                .header(header::ACCEPT, "application/json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
     }
 
     pub async fn post_json(&self, path: &str, body: &Value) -> Response<Body> {
-        self.send(Request::builder()
-            .method("POST")
-            .uri(path)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(body).unwrap()))
-            .unwrap())
-            .await
+        self.send(
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(body).unwrap()))
+                .unwrap(),
+        )
+        .await
     }
 
     pub async fn put_json(&self, path: &str, body: &Value) -> Response<Body> {
-        self.send(Request::builder()
-            .method("PUT")
-            .uri(path)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(body).unwrap()))
-            .unwrap())
-            .await
+        self.send(
+            Request::builder()
+                .method("PUT")
+                .uri(path)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(body).unwrap()))
+                .unwrap(),
+        )
+        .await
     }
 
     pub async fn delete(&self, path: &str) -> Response<Body> {
-        self.send(Request::builder()
-            .method("DELETE")
-            .uri(path)
-            .body(Body::empty())
-            .unwrap())
-            .await
+        self.send(
+            Request::builder()
+                .method("DELETE")
+                .uri(path)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
     }
 
     pub async fn post_csv(&self, path: &str, csv: &str) -> Response<Body> {
-        self.send(Request::builder()
-            .method("POST")
-            .uri(path)
-            .header(header::CONTENT_TYPE, "text/csv")
-            .body(Body::from(csv.to_string()))
-            .unwrap())
-            .await
+        self.send(
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header(header::CONTENT_TYPE, "text/csv")
+                .body(Body::from(csv.to_string()))
+                .unwrap(),
+        )
+        .await
     }
 
     /// Like `get` but without the auth header, even when the harness has
@@ -182,8 +197,12 @@ pub async fn json(resp: Response<Body>) -> Value {
     if bytes.is_empty() {
         return Value::Null;
     }
-    serde_json::from_slice(&bytes)
-        .unwrap_or_else(|e| panic!("non-JSON body (status={status}): {e}: {:?}", String::from_utf8_lossy(&bytes)))
+    serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+        panic!(
+            "non-JSON body (status={status}): {e}: {:?}",
+            String::from_utf8_lossy(&bytes)
+        )
+    })
 }
 
 #[allow(dead_code)]

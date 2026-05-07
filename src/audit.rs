@@ -152,13 +152,22 @@ pub struct ChainStatus {
 /// matches what's stored. Constant-time hash comparison keeps timing
 /// side-channels off the table even though the data is non-secret.
 pub async fn verify_chain(pool: &SqlitePool) -> sqlx::Result<ChainStatus> {
-    let rows: Vec<(i64, String, String, String, Option<String>, String, Option<String>, Option<String>, String)> =
-        sqlx::query_as(
-            r#"SELECT id, ts, user_name, type, ref, description, payload, prev_hash, hash
+    let rows: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    )> = sqlx::query_as(
+        r#"SELECT id, ts, user_name, type, ref, description, payload, prev_hash, hash
                FROM activity_log ORDER BY id ASC"#,
-        )
-        .fetch_all(pool)
-        .await?;
+    )
+    .fetch_all(pool)
+    .await?;
 
     let mut prev: Option<String> = None;
     let mut head: Option<String> = None;
@@ -186,8 +195,7 @@ pub async fn verify_chain(pool: &SqlitePool) -> sqlx::Result<ChainStatus> {
 
         let a = recomputed.as_bytes();
         let b = stored_hash.as_bytes();
-        let eq = a.len() == b.len()
-            && bool::from(subtle::ConstantTimeEq::ct_eq(a, b));
+        let eq = a.len() == b.len() && bool::from(subtle::ConstantTimeEq::ct_eq(a, b));
         if !eq {
             return Ok(ChainStatus {
                 entries: rows.len() as i64,
@@ -263,26 +271,35 @@ fn json_str_or_null(s: Option<&str>) -> String {
 
 /// Read recent activity entries (newest first).
 pub async fn recent(pool: &SqlitePool, limit: i64) -> sqlx::Result<Vec<ActivityEntry>> {
-    let rows: Vec<(String, String, String, Option<String>, String, Option<String>, String)> =
-        sqlx::query_as(
-            r#"SELECT ts, user_name, type, ref, description, prev_hash, hash
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+    )> = sqlx::query_as(
+        r#"SELECT ts, user_name, type, ref, description, prev_hash, hash
                FROM activity_log ORDER BY id DESC LIMIT ?"#,
-        )
-        .bind(limit)
-        .fetch_all(pool)
-        .await?;
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
 
     Ok(rows
         .into_iter()
-        .map(|(ts, user, kind, r#ref, desc, prev_hash, hash)| ActivityEntry {
-            ts,
-            user,
-            kind,
-            r#ref,
-            desc,
-            hash: Some(hash),
-            prev_hash,
-        })
+        .map(
+            |(ts, user, kind, r#ref, desc, prev_hash, hash)| ActivityEntry {
+                ts,
+                user,
+                kind,
+                r#ref,
+                desc,
+                hash: Some(hash),
+                prev_hash,
+            },
+        )
         .collect())
 }
 
@@ -295,15 +312,15 @@ mod tests {
     /// both to the empty bytestring and produced identical hashes.
     #[test]
     fn empty_ref_distinct_from_missing_ref() {
-        let a = compute_hash(None, "ts", "u", "k", None,       "desc", None);
-        let b = compute_hash(None, "ts", "u", "k", Some(""),   "desc", None);
+        let a = compute_hash(None, "ts", "u", "k", None, "desc", None);
+        let b = compute_hash(None, "ts", "u", "k", Some(""), "desc", None);
         assert_ne!(a, b, "None ref must hash differently to Some(\"\")");
     }
 
     #[test]
     fn empty_prev_distinct_from_missing_prev() {
-        let a = compute_hash(None,        "ts", "u", "k", None, "desc", None);
-        let b = compute_hash(Some(""),    "ts", "u", "k", None, "desc", None);
+        let a = compute_hash(None, "ts", "u", "k", None, "desc", None);
+        let b = compute_hash(Some(""), "ts", "u", "k", None, "desc", None);
         assert_ne!(a, b);
     }
 
@@ -329,8 +346,24 @@ mod tests {
 
     #[test]
     fn hash_is_deterministic() {
-        let a = compute_hash(Some("abc"), "ts", "u", "k", Some("R"), "d", Some("{\"a\":1}"));
-        let b = compute_hash(Some("abc"), "ts", "u", "k", Some("R"), "d", Some("{\"a\":1}"));
+        let a = compute_hash(
+            Some("abc"),
+            "ts",
+            "u",
+            "k",
+            Some("R"),
+            "d",
+            Some("{\"a\":1}"),
+        );
+        let b = compute_hash(
+            Some("abc"),
+            "ts",
+            "u",
+            "k",
+            Some("R"),
+            "d",
+            Some("{\"a\":1}"),
+        );
         assert_eq!(a, b);
     }
 }

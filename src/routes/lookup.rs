@@ -60,22 +60,18 @@ async fn lookup(
     // Validate AND canonicalise so SQL bind and provider URLs all
     // see the same trimmed form.
     let canonical = validate_barcode(&barcode).map_err(|_| {
-        ApiError::BadRequest(
-            "barcode must be 1–32 chars, alphanumeric/_/- only".into(),
-        )
+        ApiError::BadRequest("barcode must be 1–32 chars, alphanumeric/_/- only".into())
     })?;
     let canonical = canonical.to_string();
 
     // Local first — most barcodes will already exist in the catalog.
-    let local: Option<String> =
-        sqlx::query("SELECT id FROM items WHERE barcode = ? LIMIT 1")
-            .bind(&canonical)
-            .fetch_optional(&state.pool)
-            .await?
-            .map(|r| r.get::<String, _>("id"));
+    let local: Option<String> = sqlx::query("SELECT id FROM items WHERE barcode = ? LIMIT 1")
+        .bind(&canonical)
+        .fetch_optional(&state.pool)
+        .await?
+        .map(|r| r.get::<String, _>("id"));
 
-    let providers_tried: Vec<&'static str> =
-        state.providers.iter().map(|p| p.name()).collect();
+    let providers_tried: Vec<&'static str> = state.providers.iter().map(|p| p.name()).collect();
 
     let external = if state.providers.is_empty() {
         Vec::new()
@@ -161,7 +157,10 @@ mod tests {
     #[test]
     fn bucket_allows_initial_burst_then_blocks() {
         let mut b = TokenBucket {
-            tokens: 3.0, capacity: 3.0, refill_per_sec: 0.001, last: Instant::now(),
+            tokens: 3.0,
+            capacity: 3.0,
+            refill_per_sec: 0.001,
+            last: Instant::now(),
         };
         assert!(b.try_take(1.0));
         assert!(b.try_take(1.0));
@@ -171,7 +170,9 @@ mod tests {
     #[test]
     fn bucket_refills_over_time() {
         let mut b = TokenBucket {
-            tokens: 0.0, capacity: 1.0, refill_per_sec: 100.0,
+            tokens: 0.0,
+            capacity: 1.0,
+            refill_per_sec: 100.0,
             last: Instant::now() - std::time::Duration::from_millis(50),
         };
         assert!(b.try_take(1.0), "should have refilled");

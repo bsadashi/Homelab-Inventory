@@ -12,11 +12,16 @@ pub struct UpcItemDb {
     base: String,
 }
 
+impl Default for UpcItemDb {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpcItemDb {
     pub fn new() -> Self {
         Self {
-            base: std::env::var("RACKLOG_UPCITEMDB_BASE")
-                .unwrap_or_else(|_| ENDPOINT.to_string()),
+            base: std::env::var("RACKLOG_UPCITEMDB_BASE").unwrap_or_else(|_| ENDPOINT.to_string()),
         }
     }
 }
@@ -40,7 +45,9 @@ struct ApiItem {
 
 #[async_trait::async_trait]
 impl Provider for UpcItemDb {
-    fn name(&self) -> &'static str { "upcitemdb" }
+    fn name(&self) -> &'static str {
+        "upcitemdb"
+    }
 
     async fn lookup(&self, barcode: &str) -> Result<Vec<LookupResult>, LookupError> {
         let barcode = validate_barcode(barcode)?;
@@ -62,10 +69,8 @@ impl Provider for UpcItemDb {
         let out = items
             .into_iter()
             .map(|i| {
-                let mut r = LookupResult::new(
-                    "upcitemdb",
-                    i.upc.unwrap_or_else(|| barcode.to_string()),
-                );
+                let mut r =
+                    LookupResult::new("upcitemdb", i.upc.unwrap_or_else(|| barcode.to_string()));
                 r.name = i.title;
                 r.brand = i.brand;
                 r.category = i.category;

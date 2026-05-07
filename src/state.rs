@@ -21,11 +21,7 @@ impl AppState {
         Self::with_providers(pool, cfg, providers)
     }
 
-    pub fn with_providers(
-        pool: Db,
-        cfg: Config,
-        providers: Vec<Box<dyn Provider>>,
-    ) -> Self {
+    pub fn with_providers(pool: Db, cfg: Config, providers: Vec<Box<dyn Provider>>) -> Self {
         Self {
             pool,
             cfg: Arc::new(cfg),

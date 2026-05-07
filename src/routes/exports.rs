@@ -138,8 +138,7 @@ async fn import_items_csv(
     let supplier_rows = sqlx::query("SELECT id, code FROM suppliers")
         .fetch_all(&state.pool)
         .await?;
-    let mut supplier_by_id: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut supplier_by_id: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut supplier_by_code: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     for r in supplier_rows {
@@ -160,8 +159,7 @@ async fn import_items_csv(
 
     let idx = |name: &str| columns.iter().position(|c| c == name);
     let i_sku = idx("sku").ok_or_else(|| ApiError::BadRequest("missing column: sku".into()))?;
-    let i_name =
-        idx("name").ok_or_else(|| ApiError::BadRequest("missing column: name".into()))?;
+    let i_name = idx("name").ok_or_else(|| ApiError::BadRequest("missing column: name".into()))?;
 
     let i_category = idx("category").or_else(|| idx("cat"));
     let i_brand = idx("brand");
@@ -193,9 +191,8 @@ async fn import_items_csv(
         summary.processed += 1;
 
         let cells = parse_csv_row(raw);
-        let cell = |i: Option<usize>| -> Option<&str> {
-            i.and_then(|n| cells.get(n)).map(|s| s.as_str())
-        };
+        let cell =
+            |i: Option<usize>| -> Option<&str> { i.and_then(|n| cells.get(n)).map(|s| s.as_str()) };
         let cell_required = |i: usize, name: &str| -> Result<&str, String> {
             cells
                 .get(i)
@@ -226,18 +223,44 @@ async fn import_items_csv(
                 continue;
             }
         };
-        let category = cell(i_category).map(|s| s.trim()).unwrap_or("Spare parts").to_string();
-        let brand = cell(i_brand).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        let supplier = cell(i_supplier).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        let cost = cell(i_cost).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.0);
-        let price = cell(i_price).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.0);
-        let unit = cell(i_unit).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "ea".into());
-        let min_qty = cell(i_min).and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0);
-        let max_qty = cell(i_max).and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0);
-        let qty = cell(i_qty).and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0);
-        let allocated = cell(i_allocated).and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0);
-        let barcode = cell(i_barcode).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        let img = cell(i_img).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let category = cell(i_category)
+            .map(|s| s.trim())
+            .unwrap_or("Spare parts")
+            .to_string();
+        let brand = cell(i_brand)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let supplier = cell(i_supplier)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let cost = cell(i_cost)
+            .and_then(|s| s.trim().parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let price = cell(i_price)
+            .and_then(|s| s.trim().parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let unit = cell(i_unit)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "ea".into());
+        let min_qty = cell(i_min)
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        let max_qty = cell(i_max)
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        let qty = cell(i_qty)
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        let allocated = cell(i_allocated)
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        let barcode = cell(i_barcode)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let img = cell(i_img)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
 
         // Resolve supplier reference against the pre-loaded map
         // (no per-row SQL). Unknown supplier → null, matching the
@@ -254,12 +277,24 @@ async fn import_items_csv(
         // but leave previous rows committed. The audit chain is still
         // intact because record_in_tx runs inside the same tx.
         let outcome = upsert_one(
-            &state.pool, &auth.username,
-            &sku, &name, &category, brand.as_deref(),
-            resolved_supplier.as_deref(), cost, price, &unit,
-            min_qty, max_qty, qty, allocated,
-            barcode.as_deref(), img.as_deref(),
-        ).await;
+            &state.pool,
+            &auth.username,
+            &sku,
+            &name,
+            &category,
+            brand.as_deref(),
+            resolved_supplier.as_deref(),
+            cost,
+            price,
+            &unit,
+            min_qty,
+            max_qty,
+            qty,
+            allocated,
+            barcode.as_deref(),
+            img.as_deref(),
+        )
+        .await;
 
         match outcome {
             Ok(true) => summary.created += 1,
@@ -293,14 +328,10 @@ fn sanitise_row_error(e: &ApiError) -> String {
         ApiError::BadRequest(m) => m.clone(),
         ApiError::Conflict(m) => m.clone(),
         ApiError::NotFound => "referenced record not found".into(),
-        ApiError::Database(sqlx::Error::Database(db))
-            if db.is_unique_violation() =>
-        {
+        ApiError::Database(sqlx::Error::Database(db)) if db.is_unique_violation() => {
             "row violates a uniqueness constraint".into()
         }
-        ApiError::Database(sqlx::Error::Database(db))
-            if db.is_foreign_key_violation() =>
-        {
+        ApiError::Database(sqlx::Error::Database(db)) if db.is_foreign_key_violation() => {
             "row references a record that does not exist".into()
         }
         _ => "row could not be saved".into(),
@@ -311,21 +342,29 @@ fn sanitise_row_error(e: &ApiError) -> String {
 async fn upsert_one(
     pool: &sqlx::SqlitePool,
     user: &str,
-    sku: &str, name: &str, category: &str,
-    brand: Option<&str>, supplier: Option<&str>,
-    cost: f64, price: f64, unit: &str,
-    min_qty: i64, max_qty: i64, qty: i64, allocated: i64,
-    barcode: Option<&str>, img: Option<&str>,
+    sku: &str,
+    name: &str,
+    category: &str,
+    brand: Option<&str>,
+    supplier: Option<&str>,
+    cost: f64,
+    price: f64,
+    unit: &str,
+    min_qty: i64,
+    max_qty: i64,
+    qty: i64,
+    allocated: i64,
+    barcode: Option<&str>,
+    img: Option<&str>,
 ) -> ApiResult<bool> {
     let mut tx = pool.begin().await?;
 
     // Supplier reference was already resolved against the pre-loaded
     // map by the caller; pass-through here.
-    let existing: Option<String> =
-        sqlx::query_scalar("SELECT id FROM items WHERE sku = ?")
-            .bind(sku)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let existing: Option<String> = sqlx::query_scalar("SELECT id FROM items WHERE sku = ?")
+        .bind(sku)
+        .fetch_optional(&mut *tx)
+        .await?;
 
     let created;
     if let Some(id) = existing.clone() {
@@ -336,20 +375,34 @@ async fn upsert_one(
                 updated_at = datetime('now')
               WHERE id = ?"#,
         )
-        .bind(name).bind(category).bind(brand).bind(supplier)
-        .bind(cost).bind(price).bind(unit)
-        .bind(min_qty).bind(max_qty).bind(qty).bind(allocated)
-        .bind(barcode).bind(img)
+        .bind(name)
+        .bind(category)
+        .bind(brand)
+        .bind(supplier)
+        .bind(cost)
+        .bind(price)
+        .bind(unit)
+        .bind(min_qty)
+        .bind(max_qty)
+        .bind(qty)
+        .bind(allocated)
+        .bind(barcode)
+        .bind(img)
         .bind(chrono::Utc::now().date_naive().to_string())
         .bind(&id)
-        .execute(&mut *tx).await?;
-        record_in_tx(&mut tx, AuditEvent {
-            user,
-            kind: "item.import_update",
-            r#ref: Some(&id),
-            description: &format!("Imported (update) item {}", sku),
-            payload: None,
-        }).await?;
+        .execute(&mut *tx)
+        .await?;
+        record_in_tx(
+            &mut tx,
+            AuditEvent {
+                user,
+                kind: "item.import_update",
+                r#ref: Some(&id),
+                description: &format!("Imported (update) item {}", sku),
+                payload: None,
+            },
+        )
+        .await?;
         created = false;
     } else {
         // Full UUID (122 bits of entropy) — see items::create for
@@ -361,20 +414,35 @@ async fn upsert_one(
                 min_qty, max_qty, qty, allocated, barcode, tags, img, updated)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)"#,
         )
-        .bind(&id).bind(sku).bind(name).bind(category)
-        .bind(brand).bind(supplier)
-        .bind(cost).bind(price).bind(unit)
-        .bind(min_qty).bind(max_qty).bind(qty).bind(allocated)
-        .bind(barcode).bind(img)
+        .bind(&id)
+        .bind(sku)
+        .bind(name)
+        .bind(category)
+        .bind(brand)
+        .bind(supplier)
+        .bind(cost)
+        .bind(price)
+        .bind(unit)
+        .bind(min_qty)
+        .bind(max_qty)
+        .bind(qty)
+        .bind(allocated)
+        .bind(barcode)
+        .bind(img)
         .bind(chrono::Utc::now().date_naive().to_string())
-        .execute(&mut *tx).await?;
-        record_in_tx(&mut tx, AuditEvent {
-            user,
-            kind: "item.import_create",
-            r#ref: Some(&id),
-            description: &format!("Imported (create) item {}", sku),
-            payload: None,
-        }).await?;
+        .execute(&mut *tx)
+        .await?;
+        record_in_tx(
+            &mut tx,
+            AuditEvent {
+                user,
+                kind: "item.import_create",
+                r#ref: Some(&id),
+                description: &format!("Imported (create) item {}", sku),
+                payload: None,
+            },
+        )
+        .await?;
         created = true;
     }
     tx.commit().await?;
@@ -494,7 +562,10 @@ mod parser_tests {
     }
     #[test]
     fn doubled_quote_inside_quoted_cell() {
-        assert_eq!(parse_csv_row(r#""he said ""hi""""#), vec![r#"he said "hi""#]);
+        assert_eq!(
+            parse_csv_row(r#""he said ""hi""""#),
+            vec![r#"he said "hi""#]
+        );
     }
     #[test]
     fn quote_only_inside_already_quoted() {

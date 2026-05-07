@@ -5,24 +5,26 @@ mod common;
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use common::{
-    delete_with, expect_ok, expect_status, get_with, json, post_with,
-    signup_user as signup_admin, Harness,
+    delete_with, expect_ok, expect_status, get_with, json, post_with, signup_user as signup_admin,
+    Harness,
 };
 use serde_json::json as j;
 use tower::util::ServiceExt;
-
-
-
-
 
 #[tokio::test]
 async fn admin_can_create_users_with_specific_roles() {
     let h = Harness::boot_with(None, false).await;
     let admin = signup_admin(&h, "alice", "correcthorse").await;
 
-    let resp = post_with(&h, "/api/admin/users", &admin, j!({
-        "username": "bob", "password": "anothergoodone", "role": "operator"
-    })).await;
+    let resp = post_with(
+        &h,
+        "/api/admin/users",
+        &admin,
+        j!({
+            "username": "bob", "password": "anothergoodone", "role": "operator"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::CREATED);
     let body = json(resp).await;
     assert_eq!(body["username"], "bob");
@@ -38,11 +40,19 @@ async fn admin_can_create_users_with_specific_roles() {
 async fn admin_can_change_role_then_disable_then_delete() {
     let h = Harness::boot_with(None, false).await;
     let admin = signup_admin(&h, "alice", "correcthorse").await;
-    let _ = post_with(&h, "/api/admin/users", &admin, j!({
-        "username": "bob", "password": "anothergoodone", "role": "viewer"
-    })).await;
-    let bob_id = json(get_with(&h, "/api/admin/users", &admin).await).await
-        .as_array().unwrap()
+    let _ = post_with(
+        &h,
+        "/api/admin/users",
+        &admin,
+        j!({
+            "username": "bob", "password": "anothergoodone", "role": "viewer"
+        }),
+    )
+    .await;
+    let bob_id = json(get_with(&h, "/api/admin/users", &admin).await)
+        .await
+        .as_array()
+        .unwrap()
         .iter()
         .find(|u| u["username"] == "bob")
         .unwrap()["id"]
@@ -56,7 +66,8 @@ async fn admin_can_change_role_then_disable_then_delete() {
         &format!("/api/admin/users/{}/role", bob_id),
         &admin,
         j!({"role": "operator"}),
-    ).await;
+    )
+    .await;
     expect_ok(&resp);
     let body = json(resp).await;
     assert_eq!(body["role"], "operator");
@@ -67,7 +78,8 @@ async fn admin_can_change_role_then_disable_then_delete() {
         &format!("/api/admin/users/{}/disabled", bob_id),
         &admin,
         j!({"disabled": true}),
-    ).await;
+    )
+    .await;
     expect_ok(&resp);
     let body = json(resp).await;
     assert_eq!(body["disabled"], true);
@@ -89,7 +101,8 @@ async fn admin_cannot_change_own_role_or_delete_self() {
         &format!("/api/admin/users/{}/role", alice_id),
         &admin,
         j!({"role": "viewer"}),
-    ).await;
+    )
+    .await;
     expect_status(&resp, StatusCode::BAD_REQUEST);
 
     let resp = delete_with(&h, &format!("/api/admin/users/{}", alice_id), &admin).await;
@@ -102,18 +115,40 @@ async fn admin_password_reset_invalidates_target_sessions() {
     let admin = signup_admin(&h, "alice", "correcthorse").await;
 
     // Bob signs up via admin, logs in.
-    let _ = post_with(&h, "/api/admin/users", &admin, j!({
-        "username": "bob", "password": "anothergoodone", "role": "viewer"
-    })).await;
-    let bob_login = h.router.clone().oneshot(
-        Request::builder()
-            .method("POST").uri("/api/auth/login")
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&j!({
-                "username": "bob", "password": "anothergoodone"
-            })).unwrap())).unwrap(),
-    ).await.unwrap();
-    let v = bob_login.headers().get(header::SET_COOKIE).unwrap().to_str().unwrap().to_string();
+    let _ = post_with(
+        &h,
+        "/api/admin/users",
+        &admin,
+        j!({
+            "username": "bob", "password": "anothergoodone", "role": "viewer"
+        }),
+    )
+    .await;
+    let bob_login = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&j!({
+                        "username": "bob", "password": "anothergoodone"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = bob_login
+        .headers()
+        .get(header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
     let prefix = "racklog_session=";
     let start = v.find(prefix).unwrap() + prefix.len();
     let end = v[start..].find(';').unwrap();
@@ -123,12 +158,16 @@ async fn admin_password_reset_invalidates_target_sessions() {
     expect_ok(&get_with(&h, "/api/auth/me", &bob_cookie).await);
 
     // Find bob's id.
-    let bob_id = json(get_with(&h, "/api/admin/users", &admin).await).await
-        .as_array().unwrap()
+    let bob_id = json(get_with(&h, "/api/admin/users", &admin).await)
+        .await
+        .as_array()
+        .unwrap()
         .iter()
         .find(|u| u["username"] == "bob")
         .unwrap()["id"]
-        .as_str().unwrap().to_string();
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Admin resets bob's password.
     let resp = post_with(
@@ -136,7 +175,8 @@ async fn admin_password_reset_invalidates_target_sessions() {
         &format!("/api/admin/users/{}/password", bob_id),
         &admin,
         j!({"password": "abrandnewone"}),
-    ).await;
+    )
+    .await;
     expect_status(&resp, StatusCode::NO_CONTENT);
 
     // Bob's old session is now invalid.
@@ -153,9 +193,15 @@ async fn admin_can_create_revoke_api_key_and_use_it() {
     let me = json(get_with(&h, "/api/auth/me", &admin).await).await;
     let alice_id = me["user"]["id"].as_str().unwrap().to_string();
 
-    let resp = post_with(&h, "/api/admin/api_keys", &admin, j!({
-        "user_id": alice_id, "label": "ci runner"
-    })).await;
+    let resp = post_with(
+        &h,
+        "/api/admin/api_keys",
+        &admin,
+        j!({
+            "user_id": alice_id, "label": "ci runner"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::CREATED);
     let body = json(resp).await;
     let plaintext = body["plaintext"].as_str().unwrap().to_string();
@@ -163,12 +209,19 @@ async fn admin_can_create_revoke_api_key_and_use_it() {
     assert!(plaintext.starts_with("rl_"));
 
     // The key authenticates a request to /api/items.
-    let resp = h.router.clone().oneshot(
-        Request::builder()
-            .method("GET").uri("/api/items")
-            .header(header::AUTHORIZATION, format!("Bearer {}", plaintext))
-            .body(Body::empty()).unwrap(),
-    ).await.unwrap();
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/items")
+                .header(header::AUTHORIZATION, format!("Bearer {}", plaintext))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     expect_ok(&resp);
 
     // Revoke it.
@@ -176,12 +229,19 @@ async fn admin_can_create_revoke_api_key_and_use_it() {
     expect_status(&resp, StatusCode::NO_CONTENT);
 
     // It no longer authenticates.
-    let resp = h.router.clone().oneshot(
-        Request::builder()
-            .method("GET").uri("/api/items")
-            .header(header::AUTHORIZATION, format!("Bearer {}", plaintext))
-            .body(Body::empty()).unwrap(),
-    ).await.unwrap();
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/items")
+                .header(header::AUTHORIZATION, format!("Bearer {}", plaintext))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     expect_status(&resp, StatusCode::UNAUTHORIZED);
 }
 
@@ -194,8 +254,14 @@ async fn non_admin_cannot_reach_user_admin_endpoints() {
     let resp = get_with(&h, "/api/admin/users", &bob).await;
     expect_status(&resp, StatusCode::FORBIDDEN);
 
-    let resp = post_with(&h, "/api/admin/users", &bob, j!({
-        "username": "carol", "password": "yetanotherone", "role": "viewer"
-    })).await;
+    let resp = post_with(
+        &h,
+        "/api/admin/users",
+        &bob,
+        j!({
+            "username": "carol", "password": "yetanotherone", "role": "viewer"
+        }),
+    )
+    .await;
     expect_status(&resp, StatusCode::FORBIDDEN);
 }

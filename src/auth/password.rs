@@ -51,8 +51,8 @@ pub fn verify(password: &str, stored_hash: &str) -> Result<bool, PasswordError> 
         // error — they authenticate via headers, not passwords.
         return Ok(false);
     }
-    let parsed = PasswordHash::new(stored_hash)
-        .map_err(|e| PasswordError::Invalid(e.to_string()))?;
+    let parsed =
+        PasswordHash::new(stored_hash).map_err(|e| PasswordError::Invalid(e.to_string()))?;
     let argon2 = Argon2::default();
     Ok(argon2.verify_password(password.as_bytes(), &parsed).is_ok())
 }

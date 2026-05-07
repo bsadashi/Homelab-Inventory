@@ -1,11 +1,11 @@
 //! /api/pos — purchase orders. Lines are stored in a child table and
 //! folded back into the JSON shape the frontend expects on read.
 
-use crate::auth::RequireOperator;
-use crate::routes::pagination::PageQuery;
 use crate::audit::log_in_tx;
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{PurchaseLine, PurchaseOrder, PurchaseOrderInput};
+use crate::routes::pagination::PageQuery;
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -18,7 +18,6 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list).post(create))
         .route("/:id", put(update).delete(delete).get(get_one))
 }
-
 
 async fn list(
     State(state): State<AppState>,
@@ -78,19 +77,17 @@ async fn get_one(
     .fetch_optional(&state.pool)
     .await?
     .ok_or(ApiError::NotFound)?;
-    let lines = sqlx::query(
-        "SELECT sku, qty, cost FROM purchase_order_lines WHERE po_id = ?",
-    )
-    .bind(&id)
-    .fetch_all(&state.pool)
-    .await?
-    .into_iter()
-    .map(|r| PurchaseLine {
-        sku: r.get("sku"),
-        qty: r.try_get("qty").unwrap_or(0),
-        cost: r.try_get("cost").unwrap_or(0.0),
-    })
-    .collect();
+    let lines = sqlx::query("SELECT sku, qty, cost FROM purchase_order_lines WHERE po_id = ?")
+        .bind(&id)
+        .fetch_all(&state.pool)
+        .await?
+        .into_iter()
+        .map(|r| PurchaseLine {
+            sku: r.get("sku"),
+            qty: r.try_get("qty").unwrap_or(0),
+            cost: r.try_get("cost").unwrap_or(0.0),
+        })
+        .collect();
 
     Ok(Json(PurchaseOrder {
         id: row.get("id"),
@@ -125,17 +122,22 @@ async fn create(
     .execute(&mut *tx)
     .await?;
     for line in &input.lines {
-        sqlx::query(
-            "INSERT INTO purchase_order_lines (po_id, sku, qty, cost) VALUES (?, ?, ?, ?)",
-        )
-        .bind(&id)
-        .bind(&line.sku)
-        .bind(line.qty)
-        .bind(line.cost)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("INSERT INTO purchase_order_lines (po_id, sku, qty, cost) VALUES (?, ?, ?, ?)")
+            .bind(&id)
+            .bind(&line.sku)
+            .bind(line.qty)
+            .bind(line.cost)
+            .execute(&mut *tx)
+            .await?;
     }
-    log_in_tx(&mut tx, &auth.username, "po.create", Some(&id), &format!("Created purchase order {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "po.create",
+        Some(&id),
+        &format!("Created purchase order {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -180,17 +182,22 @@ async fn update(
         .execute(&mut *tx)
         .await?;
     for line in &input.lines {
-        sqlx::query(
-            "INSERT INTO purchase_order_lines (po_id, sku, qty, cost) VALUES (?, ?, ?, ?)",
-        )
-        .bind(&id)
-        .bind(&line.sku)
-        .bind(line.qty)
-        .bind(line.cost)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("INSERT INTO purchase_order_lines (po_id, sku, qty, cost) VALUES (?, ?, ?, ?)")
+            .bind(&id)
+            .bind(&line.sku)
+            .bind(line.qty)
+            .bind(line.cost)
+            .execute(&mut *tx)
+            .await?;
     }
-    log_in_tx(&mut tx, &auth.username, "po.update", Some(&id), &format!("Updated purchase order {} → {}", id, input.status)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "po.update",
+        Some(&id),
+        &format!("Updated purchase order {} → {}", id, input.status),
+    )
+    .await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -208,7 +215,14 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "po.delete", Some(&id), &format!("Deleted purchase order {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "po.delete",
+        Some(&id),
+        &format!("Deleted purchase order {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

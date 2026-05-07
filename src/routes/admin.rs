@@ -94,11 +94,18 @@ struct TableStat {
 
 async fn stats(State(state): State<AppState>) -> ApiResult<Json<StatsResponse>> {
     let tables: &[&'static str] = &[
-        "items", "item_stock", "locations", "suppliers",
-        "purchase_orders", "purchase_order_lines",
-        "sales_orders", "sales_order_lines",
-        "transfers", "transfer_lines",
-        "counts", "activity_log",
+        "items",
+        "item_stock",
+        "locations",
+        "suppliers",
+        "purchase_orders",
+        "purchase_order_lines",
+        "sales_orders",
+        "sales_order_lines",
+        "transfers",
+        "transfer_lines",
+        "counts",
+        "activity_log",
     ];
     let mut out = Vec::with_capacity(tables.len());
     for &t in tables {
@@ -112,16 +119,14 @@ async fn stats(State(state): State<AppState>) -> ApiResult<Json<StatsResponse>> 
     }
 
     let (database_bytes, wal_bytes) = file_sizes(&state.cfg.database_url);
-    let oldest: Option<String> =
-        sqlx::query_scalar("SELECT MIN(ts) FROM activity_log")
-            .fetch_optional(&state.pool)
-            .await?
-            .flatten();
-    let newest: Option<String> =
-        sqlx::query_scalar("SELECT MAX(ts) FROM activity_log")
-            .fetch_optional(&state.pool)
-            .await?
-            .flatten();
+    let oldest: Option<String> = sqlx::query_scalar("SELECT MIN(ts) FROM activity_log")
+        .fetch_optional(&state.pool)
+        .await?
+        .flatten();
+    let newest: Option<String> = sqlx::query_scalar("SELECT MAX(ts) FROM activity_log")
+        .fetch_optional(&state.pool)
+        .await?
+        .flatten();
 
     Ok(Json(StatsResponse {
         tables: out,
@@ -208,7 +213,15 @@ async fn vacuum(
         .execute(&state.pool)
         .await
         .map_err(ApiError::Database)?;
-    audit::log(&state.pool, &auth.username, "admin.vacuum", None, "VACUUM completed").await.ok();
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "admin.vacuum",
+        None,
+        "VACUUM completed",
+    )
+    .await
+    .ok();
     Ok(Json(OperationResult {
         ok: true,
         operation: "vacuum",
@@ -229,7 +242,15 @@ async fn wal_checkpoint(
         .execute(&state.pool)
         .await
         .map_err(ApiError::Database)?;
-    audit::log(&state.pool, &auth.username, "admin.wal_checkpoint", None, "WAL checkpoint TRUNCATE completed").await.ok();
+    audit::log(
+        &state.pool,
+        &auth.username,
+        "admin.wal_checkpoint",
+        None,
+        "WAL checkpoint TRUNCATE completed",
+    )
+    .await
+    .ok();
     Ok(Json(OperationResult {
         ok: true,
         operation: "wal_checkpoint",
@@ -287,11 +308,10 @@ async fn retain_activity(
     let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
     let cutoff_ts = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let candidates: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM activity_log WHERE ts < ?")
-            .bind(&cutoff_ts)
-            .fetch_one(&state.pool)
-            .await?;
+    let candidates: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM activity_log WHERE ts < ?")
+        .bind(&cutoff_ts)
+        .fetch_one(&state.pool)
+        .await?;
 
     if dry_run || candidates == 0 {
         return Ok(Json(RetainResponse {
@@ -306,12 +326,11 @@ async fn retain_activity(
 
     // Capture the hash of the last row we're about to delete so the
     // operator can pin a verifiable anchor for the truncated tail.
-    let anchor: Option<String> = sqlx::query_scalar(
-        "SELECT hash FROM activity_log WHERE ts < ? ORDER BY id DESC LIMIT 1",
-    )
-    .bind(&cutoff_ts)
-    .fetch_optional(&state.pool)
-    .await?;
+    let anchor: Option<String> =
+        sqlx::query_scalar("SELECT hash FROM activity_log WHERE ts < ? ORDER BY id DESC LIMIT 1")
+            .bind(&cutoff_ts)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let mut tx = state.pool.begin().await?;
     let res = sqlx::query("DELETE FROM activity_log WHERE ts < ?")
@@ -322,12 +341,19 @@ async fn retain_activity(
 
     // Record the retention itself in the chain so a future operator
     // can see when the truncation happened.
-    audit::log_in_tx(&mut tx, &auth.username, "admin.retain_activity", anchor.as_deref(), &format!(
-                "Pruned {} activity rows older than {} (anchor: {})",
-                deleted,
-                cutoff_ts,
-                anchor.as_deref().unwrap_or("none"),
-            )).await?;
+    audit::log_in_tx(
+        &mut tx,
+        &auth.username,
+        "admin.retain_activity",
+        anchor.as_deref(),
+        &format!(
+            "Pruned {} activity rows older than {} (anchor: {})",
+            deleted,
+            cutoff_ts,
+            anchor.as_deref().unwrap_or("none"),
+        ),
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(Json(RetainResponse {
@@ -373,9 +399,13 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     }
 
     let counts: &[&str] = &[
-        "items", "locations", "suppliers",
-        "purchase_orders", "sales_orders",
-        "transfers", "counts",
+        "items",
+        "locations",
+        "suppliers",
+        "purchase_orders",
+        "sales_orders",
+        "transfers",
+        "counts",
     ];
     for &t in counts {
         let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", t))
@@ -397,7 +427,10 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     s.push_str(&format!("racklog_wal_bytes {}\n", wal_size));
 
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
         s,
     )
 }
@@ -465,9 +498,13 @@ mod tests {
 
     #[test]
     fn require_confirm_accepts_truthy() {
-        let q = ConfirmQuery { confirm: Some("1".into()) };
+        let q = ConfirmQuery {
+            confirm: Some("1".into()),
+        };
         assert!(require_confirm(&q, "x").is_ok());
-        let q = ConfirmQuery { confirm: Some("true".into()) };
+        let q = ConfirmQuery {
+            confirm: Some("true".into()),
+        };
         assert!(require_confirm(&q, "x").is_ok());
     }
     #[test]
@@ -477,7 +514,9 @@ mod tests {
     }
     #[test]
     fn require_confirm_rejects_falsy() {
-        let q = ConfirmQuery { confirm: Some("no".into()) };
+        let q = ConfirmQuery {
+            confirm: Some("no".into()),
+        };
         assert!(require_confirm(&q, "x").is_err());
     }
 }

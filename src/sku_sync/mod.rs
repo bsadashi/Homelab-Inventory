@@ -98,12 +98,11 @@ pub fn providers_from_env() -> Vec<Box<dyn Provider>> {
         std::env::var("DIGIKEY_CLIENT_ID"),
         std::env::var("DIGIKEY_CLIENT_SECRET"),
     ) {
-        let site = std::env::var("DIGIKEY_LOCALE_SITE")
-            .unwrap_or_else(|_| "US".to_string());
-        let language = std::env::var("DIGIKEY_LOCALE_LANGUAGE")
-            .unwrap_or_else(|_| "en".to_string());
-        let currency = std::env::var("DIGIKEY_LOCALE_CURRENCY")
-            .unwrap_or_else(|_| "USD".to_string());
+        let site = std::env::var("DIGIKEY_LOCALE_SITE").unwrap_or_else(|_| "US".to_string());
+        let language =
+            std::env::var("DIGIKEY_LOCALE_LANGUAGE").unwrap_or_else(|_| "en".to_string());
+        let currency =
+            std::env::var("DIGIKEY_LOCALE_CURRENCY").unwrap_or_else(|_| "USD".to_string());
         out.push(Box::new(digikey::DigiKey::new(
             id, secret, site, language, currency,
         )));

@@ -3,11 +3,11 @@
 //! deliberately the same as a real SO so a small business deployment
 //! can use the same endpoints unchanged.
 
-use crate::auth::RequireOperator;
-use crate::routes::pagination::PageQuery;
 use crate::audit::log_in_tx;
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{SalesLine, SalesOrder, SalesOrderInput};
+use crate::routes::pagination::PageQuery;
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -20,7 +20,6 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list).post(create))
         .route("/:id", put(update).delete(delete).get(get_one))
 }
-
 
 async fn list(
     State(state): State<AppState>,
@@ -67,13 +66,12 @@ async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<SalesOrder>> {
-    let row = sqlx::query(
-        "SELECT id, project, status, priority, created FROM sales_orders WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let row =
+        sqlx::query("SELECT id, project, status, priority, created FROM sales_orders WHERE id = ?")
+            .bind(&id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
     let lines = sqlx::query("SELECT sku, qty FROM sales_order_lines WHERE so_id = ?")
         .bind(&id)
         .fetch_all(&state.pool)
@@ -99,9 +97,10 @@ async fn create(
     RequireOperator(auth): RequireOperator,
     Json(input): Json<SalesOrderInput>,
 ) -> ApiResult<(StatusCode, Json<SalesOrder>)> {
-    let id = input.id.clone().unwrap_or_else(|| {
-        format!("SO-{}", chrono::Utc::now().timestamp())
-    });
+    let id = input
+        .id
+        .clone()
+        .unwrap_or_else(|| format!("SO-{}", chrono::Utc::now().timestamp()));
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         "INSERT INTO sales_orders (id, project, status, priority, created) VALUES (?, ?, ?, ?, ?)",
@@ -121,7 +120,14 @@ async fn create(
             .execute(&mut *tx)
             .await?;
     }
-    log_in_tx(&mut tx, &auth.username, "so.create", Some(&id), &format!("Created pick order {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "so.create",
+        Some(&id),
+        &format!("Created pick order {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -169,7 +175,14 @@ async fn update(
             .execute(&mut *tx)
             .await?;
     }
-    log_in_tx(&mut tx, &auth.username, "so.update", Some(&id), &format!("Updated pick order {} → {}", id, input.status)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "so.update",
+        Some(&id),
+        &format!("Updated pick order {} → {}", id, input.status),
+    )
+    .await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -187,7 +200,14 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "so.delete", Some(&id), &format!("Deleted pick order {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "so.delete",
+        Some(&id),
+        &format!("Deleted pick order {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

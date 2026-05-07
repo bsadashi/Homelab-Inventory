@@ -17,7 +17,12 @@ pub fn init(format: LogFormat) {
     match format {
         LogFormat::Json => {
             registry
-                .with(fmt::layer().json().with_current_span(false).with_span_list(false))
+                .with(
+                    fmt::layer()
+                        .json()
+                        .with_current_span(false)
+                        .with_span_list(false),
+                )
                 .init();
         }
         LogFormat::Pretty => {

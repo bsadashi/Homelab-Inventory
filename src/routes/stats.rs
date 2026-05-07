@@ -24,15 +24,13 @@ async fn summary(State(state): State<AppState>) -> ApiResult<Json<StatusSummary>
         sqlx::query_scalar("SELECT CAST(COALESCE(SUM(qty * cost), 0) AS REAL) FROM items")
             .fetch_one(&state.pool)
             .await?;
-    let low_stock: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM items WHERE qty > 0 AND qty < min_qty",
-    )
-    .fetch_one(&state.pool)
-    .await?;
-    let out_of_stock: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty = 0")
+    let low_stock: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty > 0 AND qty < min_qty")
             .fetch_one(&state.pool)
             .await?;
+    let out_of_stock: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE qty = 0")
+        .fetch_one(&state.pool)
+        .await?;
     let serialized_units: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(json_array_length(serials)), 0) \
          FROM item_stock WHERE serials IS NOT NULL",
@@ -45,20 +43,18 @@ async fn summary(State(state): State<AppState>) -> ApiResult<Json<StatusSummary>
     )
     .fetch_one(&state.pool)
     .await?;
-    let open_sos: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sales_orders WHERE status IN ('open', 'picking')",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let open_sos: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM sales_orders WHERE status IN ('open', 'picking')")
+            .fetch_one(&state.pool)
+            .await?;
     let pending_transfers: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM transfers WHERE status = 'pending'")
             .fetch_one(&state.pool)
             .await?;
-    let scheduled_counts: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM counts WHERE status IN ('scheduled', 'open')",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let scheduled_counts: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM counts WHERE status IN ('scheduled', 'open')")
+            .fetch_one(&state.pool)
+            .await?;
 
     Ok(Json(StatusSummary {
         total_skus,

@@ -49,8 +49,14 @@ pub fn build(state: AppState) -> Router {
         // the in-browser Babel demo needs; tighten further by serving a
         // pre-compiled bundle and removing `unsafe-inline`.
         .layer(set_header(header::X_CONTENT_TYPE_OPTIONS, "nosniff"))
-        .layer(set_header(HeaderName::from_static("x-frame-options"), "DENY"))
-        .layer(set_header(HeaderName::from_static("referrer-policy"), "no-referrer"))
+        .layer(set_header(
+            HeaderName::from_static("x-frame-options"),
+            "DENY",
+        ))
+        .layer(set_header(
+            HeaderName::from_static("referrer-policy"),
+            "no-referrer",
+        ))
         .layer(set_header(
             HeaderName::from_static("permissions-policy"),
             "geolocation=(), microphone=(), camera=(self)",
@@ -71,27 +77,29 @@ pub fn serve(state: AppState) -> Router {
     build(state)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(tower_http::timeout::TimeoutLayer::new(cfg.request_timeout))
-        .layer(tower_http::limit::RequestBodyLimitLayer::new(cfg.max_body_bytes))
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            cfg.max_body_bytes,
+        ))
         .layer(tower_http::compression::CompressionLayer::new())
 }
 
 fn api_routes() -> Router<AppState> {
     Router::new()
         .merge(health::router())
-        .nest("/auth",      auth::router())
+        .nest("/auth", auth::router())
         .nest("/bootstrap", bootstrap::router())
-        .nest("/items",     items::router())
+        .nest("/items", items::router())
         .nest("/locations", locations::router())
         .nest("/suppliers", suppliers::router())
-        .nest("/pos",       purchase_orders::router())
-        .nest("/sos",       sales_orders::router())
+        .nest("/pos", purchase_orders::router())
+        .nest("/sos", sales_orders::router())
         .nest("/transfers", transfers::router())
-        .nest("/counts",    counts::router())
-        .nest("/activity",  activity::router())
-        .nest("/stats",     stats::router())
-        .nest("/exports",   exports::router())
-        .nest("/lookup",    lookup::router())
-        .nest("/admin",     admin::router().merge(admin_users::router()))
+        .nest("/counts", counts::router())
+        .nest("/activity", activity::router())
+        .nest("/stats", stats::router())
+        .nest("/exports", exports::router())
+        .nest("/lookup", lookup::router())
+        .nest("/admin", admin::router().merge(admin_users::router()))
 }
 
 /// Default-deny CORS. Set `RACKLOG_ALLOW_ORIGIN=https://...,https://...`
@@ -105,11 +113,7 @@ fn build_cors(allow: &AllowOrigin) -> CorsLayer {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([
-            header::AUTHORIZATION,
-            header::CONTENT_TYPE,
-            header::ACCEPT,
-        ]);
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT]);
 
     match allow {
         AllowOrigin::SameOrigin => base, // no Access-Control-Allow-Origin → same-origin only

@@ -6,7 +6,7 @@
 //! logout is harmless without a session, etc.).
 
 use crate::audit::{record, AuditEvent};
-use crate::auth::identity::{Role, AuthIdentity};
+use crate::auth::identity::{AuthIdentity, Role};
 use crate::auth::{password, sessions, SESSION_COOKIE};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -45,9 +45,7 @@ struct AuthResponse {
 fn validate_username(s: &str) -> Result<&str, ApiError> {
     let s = s.trim();
     if s.is_empty() || s.len() > 64 {
-        return Err(ApiError::BadRequest(
-            "username must be 1–64 chars".into(),
-        ));
+        return Err(ApiError::BadRequest("username must be 1–64 chars".into()));
     }
     if !s
         .chars()
@@ -59,7 +57,6 @@ fn validate_username(s: &str) -> Result<&str, ApiError> {
     }
     Ok(s)
 }
-
 
 fn build_session_cookie(token: &str, expires_at: chrono::DateTime<chrono::Utc>) -> String {
     // HttpOnly so JS can't read it; SameSite=Strict so it isn't sent
@@ -100,8 +97,7 @@ async fn signup(
         return Err(ApiError::Forbidden);
     };
 
-    let hash = password::hash(&input.password)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let hash = password::hash(&input.password).map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     let user = match users::create(&state.pool, &username, &hash, role, source_label).await {
         Ok(u) => u,
@@ -122,11 +118,7 @@ async fn signup(
             user: &user.username,
             kind: "auth.signup",
             r#ref: Some(&user.id),
-            description: &format!(
-                "User {} signed up ({})",
-                user.username,
-                role.as_str()
-            ),
+            description: &format!("User {} signed up ({})", user.username, role.as_str()),
             payload: None,
         },
     )
@@ -136,18 +128,18 @@ async fn signup(
     let mut headers = HeaderMap::new();
     headers.insert(
         SET_COOKIE,
-        HeaderValue::from_str(&build_session_cookie(&session.plaintext, session.expires_at))
-            .unwrap_or(HeaderValue::from_static("")),
+        HeaderValue::from_str(&build_session_cookie(
+            &session.plaintext,
+            session.expires_at,
+        ))
+        .unwrap_or(HeaderValue::from_static("")),
     );
     Ok((
         StatusCode::CREATED,
         headers,
         Json(AuthResponse {
             user: user.into(),
-            expires_at: session
-                .expires_at
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
+            expires_at: session.expires_at.format("%Y-%m-%d %H:%M:%S").to_string(),
             source: "session",
         }),
     ))
@@ -198,27 +190,24 @@ async fn login(
     let mut headers = HeaderMap::new();
     headers.insert(
         SET_COOKIE,
-        HeaderValue::from_str(&build_session_cookie(&session.plaintext, session.expires_at))
-            .unwrap_or(HeaderValue::from_static("")),
+        HeaderValue::from_str(&build_session_cookie(
+            &session.plaintext,
+            session.expires_at,
+        ))
+        .unwrap_or(HeaderValue::from_static("")),
     );
     Ok((
         StatusCode::OK,
         headers,
         Json(AuthResponse {
             user: user.into(),
-            expires_at: session
-                .expires_at
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
+            expires_at: session.expires_at.format("%Y-%m-%d %H:%M:%S").to_string(),
             source: "session",
         }),
     ))
 }
 
-async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+async fn logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if let Some(cookie) = headers.get(COOKIE).and_then(|h| h.to_str().ok()) {
         if let Some(token) = parse_cookie(cookie, SESSION_COOKIE) {
             let _ = sessions::revoke(&state.pool, &token).await;
@@ -227,8 +216,7 @@ async fn logout(
     let mut headers = HeaderMap::new();
     headers.insert(
         SET_COOKIE,
-        HeaderValue::from_str(&build_clear_cookie())
-            .unwrap_or(HeaderValue::from_static("")),
+        HeaderValue::from_str(&build_clear_cookie()).unwrap_or(HeaderValue::from_static("")),
     );
     (StatusCode::NO_CONTENT, headers)
 }

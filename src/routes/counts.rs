@@ -1,10 +1,10 @@
 //! /api/counts — cycle counts and audits.
 
-use crate::auth::RequireOperator;
-use crate::routes::pagination::PageQuery;
 use crate::audit::log_in_tx;
+use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Count, CountInput};
+use crate::routes::pagination::PageQuery;
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -17,7 +17,6 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list).post(create))
         .route("/:id", put(update).delete(delete).get(get_one))
 }
-
 
 async fn list(
     State(state): State<AppState>,
@@ -35,10 +34,7 @@ async fn list(
     Ok(Json(rows.into_iter().map(row_to_count).collect()))
 }
 
-async fn get_one(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> ApiResult<Json<Count>> {
+async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Count>> {
     let row = sqlx::query(
         "SELECT id, location_id, date, status, counted, variance, by_user \
          FROM counts WHERE id = ?",
@@ -55,9 +51,10 @@ async fn create(
     RequireOperator(auth): RequireOperator,
     Json(input): Json<CountInput>,
 ) -> ApiResult<(StatusCode, Json<Count>)> {
-    let id = input.id.clone().unwrap_or_else(|| {
-        format!("CYC-{}", chrono::Utc::now().timestamp())
-    });
+    let id = input
+        .id
+        .clone()
+        .unwrap_or_else(|| format!("CYC-{}", chrono::Utc::now().timestamp()));
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         "INSERT INTO counts (id, location_id, date, status, counted, variance, by_user) \
@@ -72,7 +69,14 @@ async fn create(
     .bind(&input.by)
     .execute(&mut *tx)
     .await?;
-    log_in_tx(&mut tx, &auth.username, "count.create", Some(&id), &format!("Created count {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "count.create",
+        Some(&id),
+        &format!("Created count {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -111,10 +115,14 @@ async fn update(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "count.update", Some(&id), &format!(
-                "Updated count {} (variance {})",
-                id, input.variance
-            )).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "count.update",
+        Some(&id),
+        &format!("Updated count {} (variance {})", id, input.variance),
+    )
+    .await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -132,7 +140,14 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    log_in_tx(&mut tx, &auth.username, "count.delete", Some(&id), &format!("Deleted count {}", id)).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "count.delete",
+        Some(&id),
+        &format!("Deleted count {}", id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

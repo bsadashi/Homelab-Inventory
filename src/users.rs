@@ -47,7 +47,15 @@ pub async fn find_by_username(
     username: &str,
 ) -> sqlx::Result<Option<(UserRecord, String /* password_hash */)>> {
     let row: Option<(
-        String, String, String, String, i64, Option<String>, String, String, Option<String>,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        Option<String>,
+        String,
+        String,
+        Option<String>,
     )> = sqlx::query_as(
         r#"SELECT id, username, password_hash, role, disabled, source,
                   created_at, updated_at, last_login_at
@@ -56,57 +64,53 @@ pub async fn find_by_username(
     .bind(username)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|(id, username, password_hash, role, disabled, source, created_at, updated_at, last_login_at)| {
-        let user = UserRecord {
+    Ok(row.map(
+        |(
             id,
             username,
-            role: Role::from_str(&role).unwrap_or(Role::Viewer),
-            disabled: disabled != 0,
+            password_hash,
+            role,
+            disabled,
             source,
             created_at,
             updated_at,
             last_login_at,
-        };
-        (user, password_hash)
-    }))
+        )| {
+            let user = UserRecord {
+                id,
+                username,
+                role: Role::from_str(&role).unwrap_or(Role::Viewer),
+                disabled: disabled != 0,
+                source,
+                created_at,
+                updated_at,
+                last_login_at,
+            };
+            (user, password_hash)
+        },
+    ))
 }
 
 pub async fn find_by_id(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<UserRecord>> {
-    let row: Option<(String, String, String, i64, Option<String>, String, String, Option<String>)> =
-        sqlx::query_as(
-            r#"SELECT id, username, role, disabled, source,
+    let row: Option<(
+        String,
+        String,
+        String,
+        i64,
+        Option<String>,
+        String,
+        String,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"SELECT id, username, role, disabled, source,
                       created_at, updated_at, last_login_at
                FROM users WHERE id = ?"#,
-        )
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-    Ok(row.map(|(id, username, role, disabled, source, created_at, updated_at, last_login_at)| {
-        UserRecord {
-            id,
-            username,
-            role: Role::from_str(&role).unwrap_or(Role::Viewer),
-            disabled: disabled != 0,
-            source,
-            created_at,
-            updated_at,
-            last_login_at,
-        }
-    }))
-}
-
-pub async fn list(pool: &SqlitePool) -> sqlx::Result<Vec<UserRecord>> {
-    let rows: Vec<(String, String, String, i64, Option<String>, String, String, Option<String>)> =
-        sqlx::query_as(
-            r#"SELECT id, username, role, disabled, source,
-                      created_at, updated_at, last_login_at
-               FROM users ORDER BY username COLLATE NOCASE"#,
-        )
-        .fetch_all(pool)
-        .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(id, username, role, disabled, source, created_at, updated_at, last_login_at)| {
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(
+        |(id, username, role, disabled, source, created_at, updated_at, last_login_at)| {
             UserRecord {
                 id,
                 username,
@@ -117,7 +121,43 @@ pub async fn list(pool: &SqlitePool) -> sqlx::Result<Vec<UserRecord>> {
                 updated_at,
                 last_login_at,
             }
-        })
+        },
+    ))
+}
+
+pub async fn list(pool: &SqlitePool) -> sqlx::Result<Vec<UserRecord>> {
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        i64,
+        Option<String>,
+        String,
+        String,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"SELECT id, username, role, disabled, source,
+                      created_at, updated_at, last_login_at
+               FROM users ORDER BY username COLLATE NOCASE"#,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, username, role, disabled, source, created_at, updated_at, last_login_at)| {
+                UserRecord {
+                    id,
+                    username,
+                    role: Role::from_str(&role).unwrap_or(Role::Viewer),
+                    disabled: disabled != 0,
+                    source,
+                    created_at,
+                    updated_at,
+                    last_login_at,
+                }
+            },
+        )
         .collect())
 }
 
@@ -140,28 +180,27 @@ pub async fn create(
     .bind(source)
     .execute(pool)
     .await?;
-    Ok(find_by_id(pool, &id).await?.expect("just-inserted user must exist"))
+    Ok(find_by_id(pool, &id)
+        .await?
+        .expect("just-inserted user must exist"))
 }
 
 pub async fn set_role(pool: &SqlitePool, id: &str, role: Role) -> sqlx::Result<u64> {
-    let res = sqlx::query(
-        "UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?",
-    )
-    .bind(role.as_str())
-    .bind(id)
-    .execute(pool)
-    .await?;
+    let res = sqlx::query("UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(role.as_str())
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(res.rows_affected())
 }
 
 pub async fn set_disabled(pool: &SqlitePool, id: &str, disabled: bool) -> sqlx::Result<u64> {
-    let res = sqlx::query(
-        "UPDATE users SET disabled = ?, updated_at = datetime('now') WHERE id = ?",
-    )
-    .bind(if disabled { 1 } else { 0 })
-    .bind(id)
-    .execute(pool)
-    .await?;
+    let res =
+        sqlx::query("UPDATE users SET disabled = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(if disabled { 1 } else { 0 })
+            .bind(id)
+            .execute(pool)
+            .await?;
     Ok(res.rows_affected())
 }
 
