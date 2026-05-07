@@ -23,7 +23,6 @@ tower-http = { version = "0.5", features = [
     "fs", "cors", "trace", "compression-gzip", "set-header",
     "request-id", "timeout", "limit", "sensitive-headers"
 ] }
-hyper = { version = "1", features = ["full"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

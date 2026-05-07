@@ -1406,7 +1406,6 @@ dependencies = [
  "dotenvy",
  "hex",
  "http-body-util",
- "hyper",
  "mime_guess",
  "password-hash",
  "rand 0.8.6",
