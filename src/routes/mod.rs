@@ -12,6 +12,7 @@ pub mod health;
 pub mod items;
 pub mod locations;
 pub mod lookup;
+pub mod pagination;
 pub mod purchase_orders;
 pub mod sales_orders;
 pub mod stats;

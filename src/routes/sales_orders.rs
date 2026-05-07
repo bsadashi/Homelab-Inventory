@@ -4,6 +4,7 @@
 //! can use the same endpoints unchanged.
 
 use crate::auth::RequireOperator;
+use crate::routes::pagination::PageQuery;
 use crate::audit::{record_in_tx, AuditEvent};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{SalesLine, SalesOrder, SalesOrderInput};
@@ -12,7 +13,6 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};
 use axum::{Json, Router};
-use serde::Deserialize;
 use sqlx::Row;
 
 pub fn router() -> Router<AppState> {
@@ -21,18 +21,12 @@ pub fn router() -> Router<AppState> {
         .route("/:id", put(update).delete(delete).get(get_one))
 }
 
-#[derive(Debug, Deserialize)]
-pub struct PageQuery {
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-}
 
 async fn list(
     State(state): State<AppState>,
     Query(p): Query<PageQuery>,
 ) -> ApiResult<Json<Vec<SalesOrder>>> {
-    let limit = p.limit.unwrap_or(200).clamp(1, 2000);
-    let offset = p.offset.unwrap_or(0).max(0);
+    let (limit, offset) = p.resolve();
     let rows = sqlx::query(
         "SELECT id, project, status, priority, created FROM sales_orders \
          ORDER BY created DESC LIMIT ? OFFSET ?",

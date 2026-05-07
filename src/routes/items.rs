@@ -38,8 +38,11 @@ async fn list(
     State(state): State<AppState>,
     Query(filter): Query<ListFilter>,
 ) -> ApiResult<Json<Vec<Item>>> {
-    let limit = filter.limit.unwrap_or(1000).clamp(1, 5000);
-    let offset = filter.offset.unwrap_or(0).max(0);
+    let (limit, offset) = crate::routes::pagination::PageQuery {
+        limit: filter.limit,
+        offset: filter.offset,
+    }
+    .resolve();
 
     let mut sql = String::from(
         "SELECT id, sku, name, category, brand, supplier_id, cost, price, unit, \
