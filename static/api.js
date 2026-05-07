@@ -37,7 +37,15 @@
     const init = { method, headers, credentials: 'same-origin' };
     if (body !== undefined) init.body = JSON.stringify(body);
     const r = await fetch(path, init);
-    if (r.status === 401) { emit('unauthorized', { path }); }
+    if (r.status === 401) {
+      emit('unauthorized', { path });
+      // Cookie-based auth: bounce to /login so the user can re-auth
+      // without losing context. Only do this for navigations
+      // through the dashboard (not for token-only API callers).
+      if (!tok && document.location.pathname !== '/login') {
+        document.location.replace('/login');
+      }
+    }
     if (!r.ok) {
       let msg = `${r.status} ${r.statusText}`;
       try { const j = await r.json(); if (j && j.message) msg = j.message; } catch (_) {}

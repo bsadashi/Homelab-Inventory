@@ -27,9 +27,12 @@ Kubernetes.
 - **Tamper-evident audit log** — every mutation flows through a
   SHA-256 chain; the boot path verifies it and `/api/activity/verify`
   reproduces it on demand. Constant-time comparison via `subtle`.
-- **Optional bearer-token auth** (`RACKLOG_AUTH_TOKEN`) gating every
-  `/api` write; comparison is constant time so the token can't leak
-  via response timing.
+  Each entry records the **real caller's username**, not a generic
+  service principal.
+- **Multi-user authentication** — Argon2id password hashing, secure
+  HttpOnly/SameSite=Strict session cookies, role-based authz (admin
+  / operator / viewer), per-user API keys, optional SSO via trusted
+  upstream headers (Authelia / oauth2-proxy / Authentik / Pomerium).
 - **Strict default security headers** — `X-Content-Type-Options`,
   `X-Frame-Options DENY`, `Referrer-Policy no-referrer`,
   `Permissions-Policy` locking down geolocation/microphone/camera,
@@ -108,6 +111,56 @@ catalogs; capped to keep responses bounded).
 | GET    | `/api/lookup/{barcode}`    | Local + external SKU lookup        |
 | GET    | `/api/lookup/providers`    | List enabled external providers    |
 
+### Authentication
+
+Three orthogonal auth sources, resolved in order on every request:
+
+  1. **Cookie session** (`racklog_session=…`) — primary path for
+     humans on the dashboard. 30-day TTL, HttpOnly, SameSite=Strict,
+     Secure. Plaintext token only on the wire; the database stores
+     SHA-256 hashes.
+  2. **API key** (`Authorization: Bearer rl_<64-hex>`) — for scripts
+     and service accounts. Created by an admin, shown to the caller
+     exactly once on creation, hash-on-disk.
+  3. **Trusted upstream header** (`X-Forwarded-User` /
+     `X-Forwarded-Groups`) — only honoured when
+     `RACKLOG_TRUST_FORWARDED_HEADERS=1`. Auto-provisions users on
+     first sight; group membership maps to role (`racklog-admin` →
+     admin, `racklog-operator` → operator, anything else → viewer).
+     Use this when you front racklog with Authelia, oauth2-proxy,
+     Authentik, or Pomerium.
+
+A fresh deployment runs in **bootstrap mode**: `/api/auth/signup` is
+open until the first user is created, and that first user is
+auto-promoted to admin. `RACKLOG_AUTH_TOKEN` (legacy) keeps working
+as a synthetic admin token *only while the users table is empty* so
+existing deployments don't lock themselves out at upgrade time.
+
+| Method | Path                | Purpose                                |
+|--------|---------------------|----------------------------------------|
+| POST   | `/api/auth/signup`  | Create an account; first one is admin |
+| POST   | `/api/auth/login`   | Issue a session cookie                |
+| POST   | `/api/auth/logout`  | Revoke the current session            |
+| GET    | `/api/auth/me`      | Current identity + bootstrap hints    |
+
+### User & API-key management (admin)
+
+| Method | Path                                  | Purpose                       |
+|--------|---------------------------------------|-------------------------------|
+| GET    | `/api/admin/users`                    | List users                    |
+| POST   | `/api/admin/users`                    | Create with explicit role     |
+| GET    | `/api/admin/users/:id`                | Single record                 |
+| POST   | `/api/admin/users/:id/role`           | Promote / demote              |
+| POST   | `/api/admin/users/:id/disabled`       | Disable / re-enable + revoke sessions |
+| POST   | `/api/admin/users/:id/password`       | Admin-driven reset + revoke sessions  |
+| DELETE | `/api/admin/users/:id`                | Hard delete                   |
+| GET    | `/api/admin/api_keys`                 | List API keys                 |
+| POST   | `/api/admin/api_keys`                 | Issue (plaintext shown once!) |
+| DELETE | `/api/admin/api_keys/:id`             | Revoke                        |
+
+Admins cannot change their own role, disable themselves, or delete
+themselves — to prevent the lone-admin lockout.
+
 ### Server administration
 
 All admin endpoints sit behind the same bearer-token gate. Mutating
@@ -149,6 +202,9 @@ All configuration is sourced from the environment.
 | `RACKLOG_LOG_FORMAT`             | `pretty`                           | `pretty` or `json`                     |
 | `RACKLOG_SEED_ON_EMPTY`          | `true`                             | Load demo dataset when DB is empty     |
 | `RACKLOG_LOG`                    | _(see code)_                       | `tracing-subscriber` filter            |
+| `RACKLOG_OPEN_SIGNUP`            | `false`                            | Allow anyone to self-register (post-bootstrap) |
+| `RACKLOG_TRUST_FORWARDED_HEADERS`| `false`                            | Honour `X-Forwarded-User` from a reverse proxy |
+| `RACKLOG_AUTH_TOKEN`             | _(unset)_                          | Bootstrap admin token (legacy; only effective when no users exist) |
 | `RACKLOG_LOOKUP_RATE_PER_MIN`    | `30`                               | Rate limit on `/api/lookup`            |
 | `RACKLOG_LOOKUP_BURST`           | _(= rate)_                         | Burst capacity for the limiter         |
 | `RACKLOG_UPCITEMDB_DISABLED`     | _(unset)_                          | Set to `1` to disable UPCitemDB        |
@@ -228,6 +284,23 @@ Migration files live in `migrations/0001_initial.sql`, etc. The convention
 is `NNNN_short-description.sql` with monotonically-increasing numbers
 (zero-padded to 4 digits). `db::migrate()` runs them at startup and is
 idempotent — already-applied migrations are skipped.
+
+### Upgrading from a single-token deployment
+
+If you were running an earlier version with `RACKLOG_AUTH_TOKEN` set:
+
+1. **Pull the new binary.** Migration `0002_users_sessions.sql` runs
+   automatically and creates the `users`, `sessions`, and `api_keys`
+   tables. No data is touched in the existing inventory tables.
+2. **Hit `/login`** and create the first user. They're auto-promoted
+   to admin. `RACKLOG_AUTH_TOKEN` remains valid as a bootstrap admin
+   token *only while the users table is empty* — once you sign up, it
+   stops working.
+3. **Issue API keys** for any scripts that were using
+   `RACKLOG_AUTH_TOKEN` directly: `POST /api/admin/api_keys` with
+   `{user_id, label}`. The plaintext key is shown exactly once.
+4. **Remove `RACKLOG_AUTH_TOKEN`** from your env config once every
+   client has been migrated to a per-user API key.
 
 ## License
 

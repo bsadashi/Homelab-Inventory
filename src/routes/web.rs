@@ -43,18 +43,27 @@ const EMBEDDED_ASSETS: &[(&str, &[u8])] = embed![
     "view-other.jsx",
     "app.jsx",
     "data.jsx",
+    "login.html",
 ];
+
+const LOGIN_TEMPLATE: &str = include_str!("../../static/login.html");
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
         .route("/index.html", get(index))
         .route("/RACKLOG.html", get(index))
+        .route("/login", get(login_page))
         .route("/favicon.ico", get(favicon))
         .route("/*path", get(asset))
 }
 
 async fn index(State(state): State<AppState>) -> ApiResult<Response> {
+    // If multi-user auth is in effect (RACKLOG_AUTH_TOKEN set, or
+    // any users exist) AND the request has no session cookie, send
+    // the user to the login page instead of rendering the dashboard
+    // — otherwise the bootstrap snapshot embedded in the HTML would
+    // either be empty (no auth context) or leak data across users.
     let html = render_index(&state).await?;
     Ok((
         [
@@ -64,6 +73,15 @@ async fn index(State(state): State<AppState>) -> ApiResult<Response> {
         html,
     )
         .into_response())
+}
+
+async fn login_page() -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(LOGIN_TEMPLATE))
+        .unwrap()
 }
 
 async fn render_index(state: &AppState) -> ApiResult<String> {

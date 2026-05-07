@@ -59,12 +59,87 @@
   refreshBtn.title = 'New data on the server. Click to reload.';
   refreshBtn.addEventListener('click', () => location.reload());
 
+  // ── identity (logged-in user + role + logout) ─────────────────────
+  const userPill = document.createElement('span');
+  Object.assign(userPill.style, {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '2px 8px',
+    border: '1px solid #475569',
+    borderRadius: '4px',
+    color: '#e5e7eb',
+    fontSize: '11px',
+  });
+  userPill.style.display = 'none';
+  userPill.title = 'Logged-in user';
+
+  const logoutBtn = document.createElement('button');
+  logoutBtn.textContent = '⎋';
+  logoutBtn.title = 'Log out';
+  Object.assign(logoutBtn.style, {
+    background: 'transparent', color: '#e5e7eb', border: '1px solid #475569',
+    padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px',
+    display: 'none',
+  });
+  logoutBtn.addEventListener('click', async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch (_) {}
+    document.location.replace('/login');
+  });
+
+  // /api/auth/me populates the identity pill once the page loads.
+  (async function loadIdentity() {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const me = await r.json();
+      const u = me.user;
+      const roleColors = {
+        admin:    '#f59e0b',
+        operator: '#10b981',
+        viewer:   '#94a3b8',
+      };
+      userPill.innerHTML = '';
+      const dotEl = document.createElement('span');
+      Object.assign(dotEl.style, {
+        width: '6px', height: '6px', borderRadius: '50%',
+        background: roleColors[u.role] || '#94a3b8',
+      });
+      const nameEl = document.createElement('span');
+      nameEl.textContent = u.username;
+      const roleEl = document.createElement('span');
+      roleEl.textContent = `· ${u.role}`;
+      roleEl.style.color = '#94a3b8';
+      userPill.appendChild(dotEl);
+      userPill.appendChild(nameEl);
+      userPill.appendChild(roleEl);
+      userPill.style.display = 'inline-flex';
+      // Hide the API token button when the user is on a real
+      // session — it's an API-only escape hatch and confuses the
+      // dashboard UX otherwise.
+      if (me.source === 'session') {
+        logoutBtn.style.display = 'inline-block';
+        // tokenBtn declared below; defer hiding to next tick.
+        setTimeout(() => {
+          const tb = document.querySelector('#rl-ops-bar [data-rl-tokenbtn]');
+          if (tb) tb.style.display = 'none';
+        }, 0);
+      } else if (me.source === 'apikey' || me.source === 'bootstrap' || me.source === 'trustedheader') {
+        // Bootstrap or token: don't expose logout; the user has no
+        // session to revoke.
+      }
+    } catch (_) {}
+  })();
+
   // ── auth token entry (F3) ────────────────────────────────────────
   // Small key-icon button that pops a prompt for the bearer token.
   // Stored value lives in localStorage('racklog.token') via RL.api.
   const tokenBtn = document.createElement('button');
   tokenBtn.textContent = '🔑';
   tokenBtn.title = 'Set / clear API bearer token';
+  tokenBtn.setAttribute('data-rl-tokenbtn', '1');
   Object.assign(tokenBtn.style, {
     background: 'transparent', color: '#e5e7eb', border: '1px solid #475569',
     padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px',
@@ -138,11 +213,13 @@
 
   root.appendChild(dot);
   root.appendChild(label);
+  root.appendChild(userPill);
   root.appendChild(tokenBtn);
   root.appendChild(exportBtn);
   root.appendChild(importBtn);
   root.appendChild(fileInput);
   root.appendChild(refreshBtn);
+  root.appendChild(logoutBtn);
   document.body.appendChild(root);
 
   // Connection / chain status updates arrive from RL.api's polling.
