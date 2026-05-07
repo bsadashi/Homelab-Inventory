@@ -22,8 +22,7 @@ Kubernetes.
   bundle and seed dataset via `include_bytes!` so the runtime image
   needs nothing on the host beyond a data volume.
 - **Local-first by default** — SQLite ships in-process; no network
-  egress at runtime. Swap `DATABASE_URL` to Postgres when you outgrow
-  one replica.
+  egress at runtime.
 - **Tamper-evident audit log** — every mutation flows through a
   SHA-256 chain; the boot path verifies it and `/api/activity/verify`
   reproduces it on demand. Constant-time comparison via `subtle`.

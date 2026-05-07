@@ -61,6 +61,13 @@ tagged release.
   it works while the users table is empty and is implicitly disabled
   once the first user is created.
 
+### Removed
+
+- Aspirational claims that swapping `DATABASE_URL` to Postgres
+  would Just Work. The runtime is hardcoded to SQLite today;
+  see [`docs/postgres.md`](docs/postgres.md) for the actual list of
+  blockers (~1–2 weeks of work, not a feature flag).
+
 ### Security
 
 - Bootstrap-injection XSS closed: `serde_json` output is HTML-safe

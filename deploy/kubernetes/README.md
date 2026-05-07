@@ -34,6 +34,6 @@ open http://localhost:8080
 ## Scaling
 
 The shipped manifest pins `replicas: 1` because the SQLite database lives
-on a single PVC. If you want HA, point `DATABASE_URL` at Postgres (rebuild
-the binary with `--features postgres` once that flag lands), drop the PVC,
-and bump replicas — the Rust service is otherwise stateless.
+on a single PVC. The Rust service is otherwise stateless. Postgres
+support is **not implemented today** — see [`docs/postgres.md`](../../docs/postgres.md)
+for what it would actually take.

@@ -1,6 +1,10 @@
--- RACKLOG initial schema. Designed to be portable between SQLite and
--- Postgres — JSON-typed columns are stored as TEXT for compatibility, and
--- ON DELETE CASCADE is used sparingly so audit references survive deletions.
+-- RACKLOG initial schema.
+--
+-- Targets SQLite. JSON-typed columns are stored as TEXT and
+-- ON DELETE CASCADE is used sparingly so audit references survive
+-- deletions. The schema is *largely* portable to Postgres but the
+-- runtime code is not — see docs/postgres.md before assuming a
+-- DATABASE_URL swap will work.
 
 PRAGMA foreign_keys = ON;
 

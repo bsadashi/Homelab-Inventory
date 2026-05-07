@@ -28,8 +28,8 @@ tower-http = { version = "0.5", features = [
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
-# Database (SQLite default; swap DATABASE_URL for Postgres after enabling the
-# `postgres` feature on sqlx — kept opt-in to keep the default image small)
+# Database. SQLite-only by design today — see `docs/postgres.md` for what
+# adopting Postgres would actually entail (it's not just a feature flag).
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "json"
 ] }
