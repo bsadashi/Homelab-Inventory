@@ -1,7 +1,7 @@
 //! /api/locations — physical hierarchy (rack → shelf → bin).
 
 use crate::auth::RequireOperator;
-use crate::audit::{record_in_tx, AuditEvent};
+use crate::audit::log_in_tx;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Location, LocationInput};
 use crate::state::AppState;
@@ -85,17 +85,7 @@ async fn create(
     .execute(&mut *tx)
     .await
     .map_err(map_unique)?;
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "location.create",
-            r#ref: Some(&id),
-            description: &format!("Created location {} ({})", input.name, input.code),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "location.create", Some(&id), &format!("Created location {} ({})", input.name, input.code)).await?;
     tx.commit().await?;
 
     Ok((
@@ -135,17 +125,7 @@ async fn update(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "location.update",
-            r#ref: Some(&id),
-            description: &format!("Updated location {}", input.code),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "location.update", Some(&id), &format!("Updated location {}", input.code)).await?;
     tx.commit().await?;
     Ok(Json(Location {
         id,
@@ -177,17 +157,7 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "location.delete",
-            r#ref: Some(&id),
-            description: &format!("Deleted location {}", id),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "location.delete", Some(&id), &format!("Deleted location {}", id)).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

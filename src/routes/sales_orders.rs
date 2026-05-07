@@ -5,7 +5,7 @@
 
 use crate::auth::RequireOperator;
 use crate::routes::pagination::PageQuery;
-use crate::audit::{record_in_tx, AuditEvent};
+use crate::audit::log_in_tx;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{SalesLine, SalesOrder, SalesOrderInput};
 use crate::state::AppState;
@@ -121,17 +121,7 @@ async fn create(
             .execute(&mut *tx)
             .await?;
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "so.create",
-            r#ref: Some(&id),
-            description: &format!("Created pick order {}", id),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "so.create", Some(&id), &format!("Created pick order {}", id)).await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -179,17 +169,7 @@ async fn update(
             .execute(&mut *tx)
             .await?;
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "so.update",
-            r#ref: Some(&id),
-            description: &format!("Updated pick order {} → {}", id, input.status),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "so.update", Some(&id), &format!("Updated pick order {} → {}", id, input.status)).await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -207,17 +187,7 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "so.delete",
-            r#ref: Some(&id),
-            description: &format!("Deleted pick order {}", id),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "so.delete", Some(&id), &format!("Deleted pick order {}", id)).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -208,18 +208,7 @@ async fn vacuum(
         .execute(&state.pool)
         .await
         .map_err(ApiError::Database)?;
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "admin.vacuum",
-            r#ref: None,
-            description: "VACUUM completed",
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+    audit::log(&state.pool, &auth.username, "admin.vacuum", None, "VACUUM completed").await.ok();
     Ok(Json(OperationResult {
         ok: true,
         operation: "vacuum",
@@ -240,18 +229,7 @@ async fn wal_checkpoint(
         .execute(&state.pool)
         .await
         .map_err(ApiError::Database)?;
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "admin.wal_checkpoint",
-            r#ref: None,
-            description: "WAL checkpoint TRUNCATE completed",
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+    audit::log(&state.pool, &auth.username, "admin.wal_checkpoint", None, "WAL checkpoint TRUNCATE completed").await.ok();
     Ok(Json(OperationResult {
         ok: true,
         operation: "wal_checkpoint",
@@ -344,22 +322,12 @@ async fn retain_activity(
 
     // Record the retention itself in the chain so a future operator
     // can see when the truncation happened.
-    audit::record_in_tx(
-        &mut tx,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "admin.retain_activity",
-            r#ref: anchor.as_deref(),
-            description: &format!(
+    audit::log_in_tx(&mut tx, &auth.username, "admin.retain_activity", anchor.as_deref(), &format!(
                 "Pruned {} activity rows older than {} (anchor: {})",
                 deleted,
                 cutoff_ts,
                 anchor.as_deref().unwrap_or("none"),
-            ),
-            payload: None,
-        },
-    )
-    .await?;
+            )).await?;
     tx.commit().await?;
 
     Ok(Json(RetainResponse {

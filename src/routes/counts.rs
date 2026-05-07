@@ -2,7 +2,7 @@
 
 use crate::auth::RequireOperator;
 use crate::routes::pagination::PageQuery;
-use crate::audit::{record_in_tx, AuditEvent};
+use crate::audit::log_in_tx;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Count, CountInput};
 use crate::state::AppState;
@@ -72,17 +72,7 @@ async fn create(
     .bind(&input.by)
     .execute(&mut *tx)
     .await?;
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "count.create",
-            r#ref: Some(&id),
-            description: &format!("Created count {}", id),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "count.create", Some(&id), &format!("Created count {}", id)).await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -121,20 +111,10 @@ async fn update(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "count.update",
-            r#ref: Some(&id),
-            description: &format!(
+    log_in_tx(&mut tx, &auth.username, "count.update", Some(&id), &format!(
                 "Updated count {} (variance {})",
                 id, input.variance
-            ),
-            payload: None,
-        },
-    )
-    .await?;
+            )).await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -152,17 +132,7 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "count.delete",
-            r#ref: Some(&id),
-            description: &format!("Deleted count {}", id),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "count.delete", Some(&id), &format!("Deleted count {}", id)).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

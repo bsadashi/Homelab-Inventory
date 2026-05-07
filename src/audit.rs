@@ -43,6 +43,52 @@ pub async fn record(pool: &SqlitePool, event: AuditEvent<'_>) -> sqlx::Result<()
     tx.commit().await
 }
 
+/// Convenience wrapper around `record_in_tx` for the common case
+/// where the caller has no structured payload to attach. Collapses
+/// the 9-line `AuditEvent { user, kind, ref, description, payload:
+/// None }` literal into a single call.
+pub async fn log_in_tx<'a>(
+    tx: &mut sqlx::Transaction<'a, sqlx::Sqlite>,
+    user: &str,
+    kind: &str,
+    r#ref: Option<&str>,
+    description: &str,
+) -> sqlx::Result<()> {
+    record_in_tx(
+        tx,
+        AuditEvent {
+            user,
+            kind,
+            r#ref,
+            description,
+            payload: None,
+        },
+    )
+    .await
+}
+
+/// Same shape as `log_in_tx`, but opens and commits its own short
+/// transaction. Use when the caller doesn't already hold one.
+pub async fn log(
+    pool: &SqlitePool,
+    user: &str,
+    kind: &str,
+    r#ref: Option<&str>,
+    description: &str,
+) -> sqlx::Result<()> {
+    record(
+        pool,
+        AuditEvent {
+            user,
+            kind,
+            r#ref,
+            description,
+            payload: None,
+        },
+    )
+    .await
+}
+
 pub async fn record_in_tx<'a>(
     tx: &mut sqlx::Transaction<'a, sqlx::Sqlite>,
     event: AuditEvent<'_>,

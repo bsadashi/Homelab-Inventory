@@ -4,7 +4,7 @@
 //! inside JSON-typed columns to keep reads cheap and the wire format
 //! identical to the prototype's data shape.
 
-use crate::audit::{record_in_tx, AuditEvent};
+use crate::audit::log_in_tx;
 use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Item, ItemInput, StockLine};
@@ -115,17 +115,7 @@ async fn create(
     let mut tx = state.pool.begin().await?;
     insert_item(&mut tx, &id, &input).await?;
     write_stock(&mut tx, &id, &input.loc).await?;
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "item.create",
-            r#ref: Some(&id),
-            description: &format!("Created item {} ({})", input.name, input.sku),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "item.create", Some(&id), &format!("Created item {} ({})", input.name, input.sku)).await?;
     tx.commit().await?;
 
     let mut item = input_to_item(&id, &input);
@@ -181,17 +171,7 @@ async fn update(
         .await?;
     write_stock(&mut tx, &id, &input.loc).await?;
 
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "item.update",
-            r#ref: Some(&id),
-            description: &format!("Updated item {}", input.sku),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "item.update", Some(&id), &format!("Updated item {}", input.sku)).await?;
     tx.commit().await?;
     get_one(State(state), Path(id)).await
 }
@@ -209,17 +189,7 @@ async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
-    record_in_tx(
-        &mut tx,
-        AuditEvent {
-            user: &auth.username,
-            kind: "item.delete",
-            r#ref: Some(&id),
-            description: &format!("Deleted item {}", id),
-            payload: None,
-        },
-    )
-    .await?;
+    log_in_tx(&mut tx, &auth.username, "item.delete", Some(&id), &format!("Deleted item {}", id)).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

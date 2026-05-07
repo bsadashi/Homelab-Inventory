@@ -87,22 +87,11 @@ async fn create_user(
         }
         Err(e) => return Err(ApiError::Database(e)),
     };
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "user.create",
-            r#ref: Some(&user.id),
-            description: &format!(
+    audit::log(&state.pool, &auth.username, "user.create", Some(&user.id), &format!(
                 "Created user {} as {}",
                 user.username,
                 role.as_str()
-            ),
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+            )).await.ok();
     Ok((StatusCode::CREATED, Json(user.into())))
 }
 
@@ -129,18 +118,7 @@ async fn update_role(
         return Err(ApiError::NotFound);
     }
     let user = users::find_by_id(&state.pool, &id).await?.ok_or(ApiError::NotFound)?;
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "user.role",
-            r#ref: Some(&user.id),
-            description: &format!("Set {} to role {}", user.username, role.as_str()),
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+    audit::log(&state.pool, &auth.username, "user.role", Some(&user.id), &format!("Set {} to role {}", user.username, role.as_str())).await.ok();
     Ok(Json(user.into()))
 }
 
@@ -169,19 +147,14 @@ async fn set_disabled(
         let _ = sessions::revoke_all_for_user(&state.pool, &id).await;
     }
     let user = users::find_by_id(&state.pool, &id).await?.ok_or(ApiError::NotFound)?;
-    audit::record(
+    let kind = if input.disabled { "user.disable" } else { "user.enable" };
+    let verb = if input.disabled { "Disabled" } else { "Re-enabled" };
+    audit::log(
         &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: if input.disabled { "user.disable" } else { "user.enable" },
-            r#ref: Some(&user.id),
-            description: &format!(
-                "{} user {}",
-                if input.disabled { "Disabled" } else { "Re-enabled" },
-                user.username,
-            ),
-            payload: None,
-        },
+        &auth.username,
+        kind,
+        Some(&user.id),
+        &format!("{} user {}", verb, user.username),
     )
     .await
     .ok();
@@ -209,18 +182,7 @@ async fn reset_password(
     // password actually takes effect on the next login.
     let _ = sessions::revoke_all_for_user(&state.pool, &id).await;
     let user = users::find_by_id(&state.pool, &id).await?.ok_or(ApiError::NotFound)?;
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "user.reset_password",
-            r#ref: Some(&user.id),
-            description: &format!("Admin reset password for {}", user.username),
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+    audit::log(&state.pool, &auth.username, "user.reset_password", Some(&user.id), &format!("Admin reset password for {}", user.username)).await.ok();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -239,18 +201,7 @@ async fn delete_user(
     if n == 0 {
         return Err(ApiError::NotFound);
     }
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "user.delete",
-            r#ref: Some(&id),
-            description: &format!("Deleted user {}", user.username),
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+    audit::log(&state.pool, &auth.username, "user.delete", Some(&id), &format!("Deleted user {}", user.username)).await.ok();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -303,21 +254,10 @@ async fn create_api_key(
         .await?
         .ok_or(ApiError::NotFound)?;
     let created = api_keys::create(&state.pool, &input.user_id, input.label.trim()).await?;
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "api_key.create",
-            r#ref: Some(&created.id),
-            description: &format!(
+    audit::log(&state.pool, &auth.username, "api_key.create", Some(&created.id), &format!(
                 "Created API key {} for user {}",
                 created.label, input.user_id
-            ),
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+            )).await.ok();
     Ok((
         StatusCode::CREATED,
         Json(CreateApiKeyResponse {
@@ -337,17 +277,6 @@ async fn revoke_api_key(
     if n == 0 {
         return Err(ApiError::NotFound);
     }
-    audit::record(
-        &state.pool,
-        audit::AuditEvent {
-            user: &auth.username,
-            kind: "api_key.revoke",
-            r#ref: Some(&id),
-            description: &format!("Revoked API key {}", id),
-            payload: None,
-        },
-    )
-    .await
-    .ok();
+    audit::log(&state.pool, &auth.username, "api_key.revoke", Some(&id), &format!("Revoked API key {}", id)).await.ok();
     Ok(StatusCode::NO_CONTENT)
 }
