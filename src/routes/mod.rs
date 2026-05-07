@@ -8,6 +8,7 @@ pub mod auth;
 pub mod bootstrap;
 pub mod counts;
 pub mod exports;
+pub mod forecast;
 pub mod health;
 pub mod items;
 pub mod locations;
@@ -98,6 +99,7 @@ fn api_routes() -> Router<AppState> {
         .nest("/activity", activity::router())
         .nest("/stats", stats::router())
         .nest("/exports", exports::router())
+        .nest("/forecast", forecast::router())
         .nest("/lookup", lookup::router())
         .nest("/admin", admin::router().merge(admin_users::router()))
 }
