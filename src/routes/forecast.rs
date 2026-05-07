@@ -66,7 +66,7 @@ async fn apply_reorder(
         let Some(supplier_id) = draft.supplier_id.as_deref() else {
             continue;
         };
-        let po_id = format!("PO-AUTO-{}", chrono::Utc::now().timestamp_millis());
+        let po_id = format!("PO-AUTO-{}", uuid::Uuid::new_v4().simple());
         let mut tx = state.pool.begin().await?;
         sqlx::query(
             "INSERT INTO purchase_orders (id, supplier_id, status, created, total) \

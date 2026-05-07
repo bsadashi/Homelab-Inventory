@@ -229,5 +229,5 @@ async fn delete(
 }
 
 fn next_po_id() -> String {
-    format!("PO-{}", chrono::Utc::now().timestamp())
+    format!("PO-{}", uuid::Uuid::new_v4().simple())
 }
