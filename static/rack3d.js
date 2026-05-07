@@ -13,6 +13,10 @@
 // in that bin (best-effort; multi-item bins show a chooser).
 
 (function () {
+  // Pin to a specific minor — major + minor of three.js have shipped
+  // breaking changes in the past. RACKLOG.html includes
+  // <link rel="modulepreload" integrity="…"> tags for both URLs;
+  // run scripts/compute-sri.sh on deploy to fill in the hashes.
   const THREE_URL = 'https://unpkg.com/three@0.169.0/build/three.module.min.js';
   const ORBIT_URL = 'https://unpkg.com/three@0.169.0/examples/jsm/controls/OrbitControls.js';
 
