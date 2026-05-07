@@ -205,3 +205,115 @@ pub fn expect_ok(resp: &Response<Body>) {
 pub fn expect_status(resp: &Response<Body>, want: StatusCode) {
     assert_eq!(resp.status(), want, "unexpected status");
 }
+
+// ─── auth-flow helpers ────────────────────────────────────────────────
+//
+// Used by tests/auth.rs and tests/admin_users.rs (and any future test
+// crate that needs to drive the cookie-session API). Lives here so we
+// have one definition, one source of truth for the auth shape.
+
+/// Send a POST with a JSON body, no cookie attached.
+pub async fn raw_post(h: &Harness, path: &str, body: serde_json::Value) -> Response<Body> {
+    h.router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+/// Send a GET with an optional Cookie header.
+pub async fn raw_get(h: &Harness, path: &str, cookie: Option<&str>) -> Response<Body> {
+    let mut b = Request::builder().method("GET").uri(path);
+    if let Some(c) = cookie {
+        b = b.header(header::COOKIE, c);
+    }
+    h.router
+        .clone()
+        .oneshot(b.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+}
+
+/// Send a POST with a JSON body and an attached session cookie.
+pub async fn post_with(
+    h: &Harness,
+    path: &str,
+    cookie: &str,
+    body: serde_json::Value,
+) -> Response<Body> {
+    h.router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+/// Send a GET with an attached session cookie.
+pub async fn get_with(h: &Harness, path: &str, cookie: &str) -> Response<Body> {
+    h.router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(path)
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+/// Send a DELETE with an attached session cookie.
+pub async fn delete_with(h: &Harness, path: &str, cookie: &str) -> Response<Body> {
+    h.router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(path)
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+/// Pull the racklog_session cookie out of a Set-Cookie header.
+pub fn extract_session_cookie(resp: &Response<Body>) -> Option<String> {
+    let v = resp.headers().get(header::SET_COOKIE)?.to_str().ok()?;
+    let prefix = "racklog_session=";
+    let start = v.find(prefix)? + prefix.len();
+    let end = v[start..].find(';').unwrap_or(v.len() - start);
+    Some(format!("racklog_session={}", &v[start..start + end]))
+}
+
+/// Sign up a new user via /api/auth/signup and return the resulting
+/// session cookie. Panics if signup fails — the caller is asserting
+/// the happy path.
+pub async fn signup_user(h: &Harness, username: &str, password: &str) -> String {
+    let resp = raw_post(
+        h,
+        "/api/auth/signup",
+        serde_json::json!({"username": username, "password": password}),
+    )
+    .await;
+    extract_session_cookie(&resp)
+        .unwrap_or_else(|| panic!("signup failed: status {}", resp.status()))
+}

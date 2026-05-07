@@ -4,53 +4,16 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
-use common::{expect_ok, expect_status, json, Harness};
+use common::{
+    delete_with, expect_ok, expect_status, get_with, json, post_with,
+    signup_user as signup_admin, Harness,
+};
 use serde_json::json as j;
 use tower::util::ServiceExt;
 
-async fn signup_admin(h: &Harness, name: &str, pw: &str) -> String {
-    let resp = h.router.clone().oneshot(
-        Request::builder()
-            .method("POST").uri("/api/auth/signup")
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&j!({
-                "username": name, "password": pw
-            })).unwrap())).unwrap(),
-    ).await.unwrap();
-    let v = resp.headers().get(header::SET_COOKIE).unwrap().to_str().unwrap().to_string();
-    let prefix = "racklog_session=";
-    let start = v.find(prefix).unwrap() + prefix.len();
-    let end = v[start..].find(';').unwrap();
-    format!("racklog_session={}", &v[start..start + end])
-}
 
-async fn post_with(h: &Harness, path: &str, cookie: &str, body: serde_json::Value) -> axum::http::Response<Body> {
-    h.router.clone().oneshot(
-        Request::builder()
-            .method("POST").uri(path)
-            .header(header::COOKIE, cookie)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap(),
-    ).await.unwrap()
-}
 
-async fn get_with(h: &Harness, path: &str, cookie: &str) -> axum::http::Response<Body> {
-    h.router.clone().oneshot(
-        Request::builder()
-            .method("GET").uri(path)
-            .header(header::COOKIE, cookie)
-            .body(Body::empty()).unwrap(),
-    ).await.unwrap()
-}
 
-async fn delete_with(h: &Harness, path: &str, cookie: &str) -> axum::http::Response<Body> {
-    h.router.clone().oneshot(
-        Request::builder()
-            .method("DELETE").uri(path)
-            .header(header::COOKIE, cookie)
-            .body(Body::empty()).unwrap(),
-    ).await.unwrap()
-}
 
 #[tokio::test]
 async fn admin_can_create_users_with_specific_roles() {

@@ -9,40 +9,15 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
-use common::{body_string, expect_ok, expect_status, json, Harness};
+use common::{
+    body_string, expect_ok, expect_status, extract_session_cookie,
+    json, raw_get, raw_post, signup_user, Harness,
+};
 use serde_json::json as j;
 use tower::util::ServiceExt;
 
-async fn raw_post(h: &Harness, path: &str, body: serde_json::Value) -> axum::http::Response<Body> {
-    h.router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(path)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(serde_json::to_vec(&body).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap()
-}
 
-async fn raw_get(h: &Harness, path: &str, cookie: Option<&str>) -> axum::http::Response<Body> {
-    let mut b = Request::builder().method("GET").uri(path);
-    if let Some(c) = cookie {
-        b = b.header(header::COOKIE, c);
-    }
-    h.router.clone().oneshot(b.body(Body::empty()).unwrap()).await.unwrap()
-}
 
-fn extract_session_cookie(resp: &axum::http::Response<Body>) -> Option<String> {
-    let v = resp.headers().get(header::SET_COOKIE)?.to_str().ok()?;
-    let prefix = "racklog_session=";
-    let start = v.find(prefix)? + prefix.len();
-    let end = v[start..].find(';').unwrap_or(v.len() - start);
-    Some(format!("racklog_session={}", &v[start..start + end]))
-}
 
 #[tokio::test]
 async fn pre_bootstrap_lets_anyone_in_then_first_signup_becomes_admin() {
@@ -191,12 +166,6 @@ async fn signup_writes_audit_entry() {
 
 // ---- role gates --------------------------------------------------------
 
-async fn signup_user(h: &Harness, username: &str, password: &str) -> String {
-    let resp = raw_post(h, "/api/auth/signup", j!({
-        "username": username, "password": password
-    })).await;
-    extract_session_cookie(&resp).expect("session cookie")
-}
 
 async fn set_role(h: &Harness, username: &str, role: &str) {
     sqlx::query("UPDATE users SET role = ? WHERE username = ?")
