@@ -802,6 +802,72 @@ async fn admin_endpoints_protected_by_token() {
     expect_ok(&ok);
 }
 
+// ---- /api/events webhook ingest ----------------------------------------
+
+#[tokio::test]
+async fn events_endpoint_records_namespaced_kind() {
+    let h = Harness::boot().await;
+    let resp = h
+        .post_json(
+            "/api/events",
+            &serde_json::json!({
+                "kind": "matter.cabinet_opened",
+                "ref": "RACK-A",
+                "description": "Front cabinet opened by motion sensor",
+                "payload": {"sensor_id": "FP400-1", "rssi": -52}
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::CREATED);
+
+    let entries = json(h.get("/api/activity").await).await;
+    let row = entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["type"] == "matter.cabinet_opened")
+        .expect("audit row written");
+    assert_eq!(row["ref"], "RACK-A");
+    assert!(row["desc"].as_str().unwrap().contains("Front cabinet"));
+
+    // Chain still verifies after a payload-bearing event.
+    let v = json(h.get("/api/activity/verify").await).await;
+    assert_eq!(v["valid"], true);
+}
+
+#[tokio::test]
+async fn events_endpoint_rejects_unknown_kind_prefix() {
+    let h = Harness::boot().await;
+    let resp = h
+        .post_json(
+            "/api/events",
+            &serde_json::json!({
+                "kind": "item.create",
+                "description": "trying to forge an inventory mutation"
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn events_endpoint_caps_payload_size() {
+    let h = Harness::boot().await;
+    // Build a payload that serialises to >16 KiB.
+    let huge: String = "x".repeat(20_000);
+    let resp = h
+        .post_json(
+            "/api/events",
+            &serde_json::json!({
+                "kind": "sensor.flood",
+                "description": "huge payload test",
+                "payload": {"data": huge}
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::BAD_REQUEST);
+}
+
 // ---- search escape ------------------------------------------------------
 
 #[tokio::test]

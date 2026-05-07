@@ -7,6 +7,7 @@ pub mod admin_users;
 pub mod auth;
 pub mod bootstrap;
 pub mod counts;
+pub mod events;
 pub mod exports;
 pub mod forecast;
 pub mod health;
@@ -96,6 +97,7 @@ fn api_routes() -> Router<AppState> {
         .nest("/sos", sales_orders::router())
         .nest("/transfers", transfers::router())
         .nest("/counts", counts::router())
+        .nest("/events", events::router())
         .nest("/activity", activity::router())
         .nest("/stats", stats::router())
         .nest("/exports", exports::router())
