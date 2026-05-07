@@ -1,6 +1,12 @@
 //! Shared test fixtures. Each call to `boot()` returns a fully-wired
 //! Axum router backed by an isolated SQLite file in a tempdir, so tests
 //! run in parallel without contention.
+//!
+//! `dead_code` is allowed at the module level because Cargo compiles
+//! the shared harness once per test crate, and no single test crate
+//! exercises every helper. Keeping the warnings on would force every
+//! crate to import every helper just to silence them.
+#![allow(dead_code)]
 
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Request, Response, StatusCode};

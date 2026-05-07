@@ -11,7 +11,7 @@ use axum::{Json, Router};
 use serde::Serialize;
 use sqlx::Row;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub fn router() -> Router<AppState> {
     Router::new()
