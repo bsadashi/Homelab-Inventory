@@ -22,6 +22,11 @@ pub const MIN_LEN: usize = 8;
 pub const MAX_LEN: usize = 256;
 
 /// Hash a fresh password with Argon2id (default OWASP-recommended params).
+///
+/// The cost parameters are reduced under `cfg(test)` so the test suite
+/// — which signs up users in nearly every test — runs in seconds
+/// instead of tens of seconds. Production cost stays at the library
+/// default.
 pub fn hash(password: &str) -> Result<String, PasswordError> {
     if password.is_empty() {
         return Err(PasswordError::Empty);
@@ -33,11 +38,32 @@ pub fn hash(password: &str) -> Result<String, PasswordError> {
         return Err(PasswordError::TooLong { max: MAX_LEN });
     }
     let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    argon2
+    argon2_engine()
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
         .map_err(|e| PasswordError::Invalid(e.to_string()))
+}
+
+#[cfg(not(test))]
+fn argon2_engine() -> Argon2<'static> {
+    Argon2::default()
+}
+
+/// Test-only fast-path: minimum legal cost. Argon2 still computes
+/// real work but ~50× faster than the production defaults — the
+/// difference between a 12 s test suite and a 3 s one. Production
+/// hashing is unaffected.
+#[cfg(test)]
+fn argon2_engine() -> Argon2<'static> {
+    use argon2::{Algorithm, Params, Version};
+    let params = Params::new(
+        Params::MIN_M_COST,
+        Params::MIN_T_COST,
+        Params::MIN_P_COST,
+        None,
+    )
+    .expect("argon2 params");
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
 }
 
 /// Verify a password against a stored Argon2 PHC string.
@@ -53,8 +79,12 @@ pub fn verify(password: &str, stored_hash: &str) -> Result<bool, PasswordError> 
     }
     let parsed =
         PasswordHash::new(stored_hash).map_err(|e| PasswordError::Invalid(e.to_string()))?;
-    let argon2 = Argon2::default();
-    Ok(argon2.verify_password(password.as_bytes(), &parsed).is_ok())
+    // Verify uses the params encoded in the PHC string itself, so
+    // Argon2::default() works for any cost we ever produced. The
+    // test-only `argon2_engine()` above only matters for *new* hashes.
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok())
 }
 
 #[cfg(test)]
