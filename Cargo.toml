@@ -11,6 +11,10 @@ publish = false
 name = "racklog"
 path = "src/main.rs"
 
+[[bin]]
+name = "racklog-mcp"
+path = "src/bin/mcp.rs"
+
 [lib]
 name = "racklog"
 path = "src/lib.rs"
@@ -66,6 +70,9 @@ mime_guess = "2"
 # Outbound HTTP client for SKU sync providers (DigiKey, UPCitemDB, …).
 # rustls-tls keeps the runtime image free of OpenSSL system deps.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
+
+# URL-encode tool arguments in the MCP server.
+urlencoding = "2"
 
 # Authentication / authorization
 argon2 = "0.5"
