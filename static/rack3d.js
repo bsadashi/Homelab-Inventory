@@ -295,11 +295,7 @@
     return { root, header, legend, viewport, tip, closeBtn };
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[c]));
-  }
+  const escapeHtml = (s) => window.RL.util.escapeHtml(s);
 
   // Expose. The ops bar will gain a ▦ button that calls this.
   window.RL = window.RL || {};

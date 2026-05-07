@@ -155,6 +155,16 @@
   }
 
   window.RL = window.RL || {};
+  // Shared HTML-escape helper. Other window.RL.* modules build
+  // tooltip / drawer markup with template strings and need to
+  // sanitize user-controlled fields before injecting them into
+  // innerHTML. Centralised here so the encoding stays consistent.
+  window.RL.util = window.RL.util || {};
+  window.RL.util.escapeHtml = function (s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  };
   window.RL.api = {
     get, post, put, delete: del,
     download,

@@ -336,11 +336,7 @@
     });
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
-  }
+  const escapeHtml = (s) => window.RL.util.escapeHtml(s);
 
   function toast(msg, tag, variant) {
     if (window.__inv && window.__inv.toast) {
