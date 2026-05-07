@@ -211,10 +211,25 @@
     }
   });
 
+  // ── 3D rack view button ──────────────────────────────────────────
+  const rack3dBtn = document.createElement('button');
+  rack3dBtn.textContent = '▦ 3D';
+  rack3dBtn.title = 'Open the 3D rack visualisation';
+  Object.assign(rack3dBtn.style, {
+    background: 'transparent', color: '#e5e7eb', border: '1px solid #475569',
+    padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px',
+  });
+  rack3dBtn.addEventListener('click', () => {
+    if (window.RL && window.RL.rack3d) {
+      window.RL.rack3d.open();
+    }
+  });
+
   root.appendChild(dot);
   root.appendChild(label);
   root.appendChild(userPill);
   root.appendChild(tokenBtn);
+  root.appendChild(rack3dBtn);
   root.appendChild(exportBtn);
   root.appendChild(importBtn);
   root.appendChild(fileInput);
