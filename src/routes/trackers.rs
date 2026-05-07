@@ -209,9 +209,13 @@ pub struct SyncInput {
 /// Push a fresh location report from a companion sync worker.
 /// Authenticated identity is recorded in the audit log so the
 /// operator can tell which integration last touched a tracker.
+/// Requires operator role — sync mutates `trackers` rows, so it
+/// follows the same write-path policy as bind/unbind. Issue a
+/// per-companion API key under the operator role rather than
+/// granting humans this privilege.
 async fn sync(
     State(state): State<AppState>,
-    Authed(auth): Authed,
+    RequireOperator(auth): RequireOperator,
     Path(id): Path<String>,
     Json(input): Json<SyncInput>,
 ) -> ApiResult<Json<Tracker>> {
