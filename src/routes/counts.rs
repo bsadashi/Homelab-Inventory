@@ -96,22 +96,29 @@ async fn vision_ingest(
         return Err(ApiError::NotFound);
     }
 
-    // Look up current qty for every observed SKU in one query so we
-    // can compute deltas without N round trips.
-    let placeholders: Vec<&str> = input.observations.iter().map(|_| "?").collect();
-    let sql = format!(
-        "SELECT sku, qty FROM items WHERE sku IN ({})",
-        placeholders.join(",")
-    );
-    let mut q = sqlx::query(&sql);
-    for o in &input.observations {
-        q = q.bind(&o.sku);
-    }
-    let rows = q.fetch_all(&state.pool).await?;
+    // Look up current qty for every observed SKU. SQLite's default
+    // SQLITE_MAX_VARIABLE_NUMBER is 999, so chunk the IN-clause to
+    // keep us under the limit even with the 1024 observation cap.
+    const SQLITE_IN_CHUNK: usize = 500;
     let mut current_qty: std::collections::HashMap<String, i64> = Default::default();
-    for r in rows {
-        use sqlx::Row as _;
-        current_qty.insert(r.get::<String, _>("sku"), r.try_get("qty").unwrap_or(0));
+    let skus: Vec<&str> = input.observations.iter().map(|o| o.sku.as_str()).collect();
+    for chunk in skus.chunks(SQLITE_IN_CHUNK) {
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT sku, qty FROM items WHERE sku IN ({})",
+            placeholders
+        );
+        let mut q = sqlx::query(&sql);
+        for sku in chunk {
+            q = q.bind(*sku);
+        }
+        let rows = q.fetch_all(&state.pool).await?;
+        for r in rows {
+            use sqlx::Row as _;
+            current_qty.insert(r.get::<String, _>("sku"), r.try_get("qty").unwrap_or(0));
+        }
     }
 
     let mut matched: i64 = 0;
