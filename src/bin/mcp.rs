@@ -295,7 +295,9 @@ async fn main() -> std::io::Result<()> {
     eprintln!(
         "racklog-mcp {} talking to {}",
         SERVER_VERSION,
-        std::env::var("RACKLOG_URL").as_deref().unwrap_or("http://127.0.0.1:8080")
+        std::env::var("RACKLOG_URL")
+            .as_deref()
+            .unwrap_or("http://127.0.0.1:8080")
     );
 
     let client = Client::from_env();

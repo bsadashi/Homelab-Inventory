@@ -87,11 +87,10 @@ async fn vision_ingest(
     }
 
     // Verify location exists.
-    let loc_exists: Option<String> =
-        sqlx::query_scalar("SELECT id FROM locations WHERE id = ?")
-            .bind(&input.location_id)
-            .fetch_optional(&state.pool)
-            .await?;
+    let loc_exists: Option<String> = sqlx::query_scalar("SELECT id FROM locations WHERE id = ?")
+        .bind(&input.location_id)
+        .fetch_optional(&state.pool)
+        .await?;
     if loc_exists.is_none() {
         return Err(ApiError::NotFound);
     }
@@ -106,10 +105,7 @@ async fn vision_ingest(
         let placeholders = std::iter::repeat_n("?", chunk.len())
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!(
-            "SELECT sku, qty FROM items WHERE sku IN ({})",
-            placeholders
-        );
+        let sql = format!("SELECT sku, qty FROM items WHERE sku IN ({})", placeholders);
         let mut q = sqlx::query(&sql);
         for sku in chunk {
             q = q.bind(*sku);

@@ -13,8 +13,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/reorder", get(reorder).post(apply_reorder))
+    Router::new().route("/reorder", get(reorder).post(apply_reorder))
 }
 
 #[derive(Debug, Deserialize, Default)]

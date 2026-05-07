@@ -826,8 +826,8 @@ async fn vision_count_records_deltas_and_audits() {
         .await;
     expect_status(&resp, StatusCode::CREATED);
     let body = json(resp).await;
-    assert_eq!(body["matched_skus"], 1);    // BOGUS skipped
-    assert_eq!(body["total_delta"], 1);     // 2 - 1 = +1
+    assert_eq!(body["matched_skus"], 1); // BOGUS skipped
+    assert_eq!(body["total_delta"], 1); // 2 - 1 = +1
 
     // The count row exists with source='vision'.
     let counts = json(h.get("/api/counts").await).await;
@@ -842,7 +842,10 @@ async fn vision_count_records_deltas_and_audits() {
     // Audit log got a count.vision row.
     let acts = json(h.get("/api/activity").await).await;
     assert!(
-        acts.as_array().unwrap().iter().any(|e| e["type"] == "count.vision"),
+        acts.as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "count.vision"),
         "expected count.vision audit row"
     );
 }

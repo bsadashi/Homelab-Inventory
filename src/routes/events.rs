@@ -22,12 +22,12 @@ use serde::{Deserialize, Serialize};
 /// endpoint. Anything else is rejected so a stolen sensor key can
 /// never impersonate a core system event.
 const ALLOWED_KIND_PREFIXES: &[&str] = &[
-    "ext.",      // generic external integrations
-    "sensor.",   // generic sensor readings
-    "matter.",   // Matter device events
-    "ha.",       // Home Assistant
-    "iot.",      // ambient-IoT / BLE
-    "vision.",   // computer-vision pipelines
+    "ext.",    // generic external integrations
+    "sensor.", // generic sensor readings
+    "matter.", // Matter device events
+    "ha.",     // Home Assistant
+    "iot.",    // ambient-IoT / BLE
+    "vision.", // computer-vision pipelines
 ];
 
 /// Maximum size of any single field. Stops a misconfigured sensor
