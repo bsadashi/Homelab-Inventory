@@ -848,6 +848,41 @@ async fn vision_count_records_deltas_and_audits() {
 }
 
 #[tokio::test]
+async fn vision_count_handles_more_than_999_observations() {
+    // Regression test for the SQLite SQLITE_MAX_VARIABLE_NUMBER
+    // (default 999) limit. The endpoint caps observations at 1024
+    // and the IN-clause that loads catalog qtys must chunk so we
+    // stay under SQLite's parameter limit no matter what the
+    // client posts.
+    let h = Harness::boot().await;
+    let mut obs = Vec::with_capacity(1000);
+    // The first observation hits a real seeded SKU so we can assert
+    // matched_skus > 0; the rest are unknowns that exercise the
+    // chunked IN-clause without polluting catalog state.
+    obs.push(serde_json::json!({
+        "sku": "NET-USW-PRO-24", "qty": 1, "confidence": 0.95
+    }));
+    for i in 0..999 {
+        obs.push(serde_json::json!({
+            "sku": format!("VISION-PROBE-{i:04}"), "qty": 1, "confidence": 0.80
+        }));
+    }
+    let resp = h
+        .post_json(
+            "/api/counts/vision",
+            &serde_json::json!({
+                "location_id": "L1",
+                "observations": obs,
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::CREATED);
+    let body = json(resp).await;
+    assert_eq!(body["observations"], 1000);
+    assert_eq!(body["matched_skus"], 1, "only the seeded SKU matches");
+}
+
+#[tokio::test]
 async fn vision_count_validates_payload() {
     let h = Harness::boot().await;
     // Empty observations.
