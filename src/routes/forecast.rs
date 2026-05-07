@@ -8,7 +8,7 @@ use crate::forecasting::{reorder_report, DEFAULT_LOOKBACK_DAYS};
 use crate::state::AppState;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 

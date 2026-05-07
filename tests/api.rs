@@ -802,6 +802,75 @@ async fn admin_endpoints_protected_by_token() {
     expect_ok(&ok);
 }
 
+// ---- vision-derived counts --------------------------------------------
+
+#[tokio::test]
+async fn vision_count_records_deltas_and_audits() {
+    let h = Harness::boot().await;
+    let resp = h
+        .post_json(
+            "/api/counts/vision",
+            &serde_json::json!({
+                "location_id": "L1",
+                "bin": "U6",
+                "model": "yolov8n-rack-2026-04",
+                "evidence_url": "http://camera-1.lan/snap/abc.jpg",
+                "observations": [
+                    // I001 NET-USW-PRO-24 has qty=1 in seed; if camera
+                    // sees 2, total_delta should be +1.
+                    { "sku": "NET-USW-PRO-24", "qty": 2, "confidence": 0.94 },
+                    { "sku": "BOGUS-UNKNOWN-SKU", "qty": 5, "confidence": 0.30 }
+                ]
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::CREATED);
+    let body = json(resp).await;
+    assert_eq!(body["matched_skus"], 1);    // BOGUS skipped
+    assert_eq!(body["total_delta"], 1);     // 2 - 1 = +1
+
+    // The count row exists with source='vision'.
+    let counts = json(h.get("/api/counts").await).await;
+    let v = counts
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"].as_str().unwrap_or("").starts_with("CYC-V-"))
+        .unwrap();
+    assert_eq!(v["status"], "done");
+
+    // Audit log got a count.vision row.
+    let acts = json(h.get("/api/activity").await).await;
+    assert!(
+        acts.as_array().unwrap().iter().any(|e| e["type"] == "count.vision"),
+        "expected count.vision audit row"
+    );
+}
+
+#[tokio::test]
+async fn vision_count_validates_payload() {
+    let h = Harness::boot().await;
+    // Empty observations.
+    let resp = h
+        .post_json(
+            "/api/counts/vision",
+            &serde_json::json!({"location_id": "L1", "observations": []}),
+        )
+        .await;
+    expect_status(&resp, StatusCode::BAD_REQUEST);
+    // Unknown location.
+    let resp = h
+        .post_json(
+            "/api/counts/vision",
+            &serde_json::json!({
+                "location_id": "L-DOES-NOT-EXIST",
+                "observations": [{"sku": "NET-USW-PRO-24", "qty": 1}]
+            }),
+        )
+        .await;
+    expect_status(&resp, StatusCode::NOT_FOUND);
+}
+
 // ---- trackers ----------------------------------------------------------
 
 #[tokio::test]
