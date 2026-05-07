@@ -224,12 +224,11 @@ fn map_groups_to_role(groups: &str) -> Role {
         let p = p.trim().to_ascii_lowercase();
         match p.as_str() {
             "racklog-admin" | "admin" | "admins" => return Role::Admin,
-            "racklog-operator" | "operator" | "operators" => {
-                if !best.at_least(Role::Operator) {
-                    best = Role::Operator;
-                }
+            "racklog-operator" | "operator" | "operators"
+                if !best.at_least(Role::Operator) =>
+            {
+                best = Role::Operator;
             }
-            "racklog-viewer" | "viewer" | "viewers" => {}
             _ => {}
         }
     }
