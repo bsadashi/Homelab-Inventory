@@ -3,7 +3,7 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{expect_ok, expect_status, json, raw_get, raw_post, signup_user, Harness};
+use common::{expect_status, json, raw_get, raw_post, signup_user, Harness};
 use serde_json::json as j;
 use tower::util::ServiceExt;
 
@@ -92,4 +92,3 @@ async fn reorder_apply_creates_draft_pos_under_admin() {
     let v = json(raw_get(&h, "/api/activity/verify", Some(&admin)).await).await;
     assert_eq!(v["valid"], true);
 }
-

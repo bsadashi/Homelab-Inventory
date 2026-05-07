@@ -130,9 +130,8 @@ pub async fn reorder_report(pool: &SqlitePool, lookback_days: i64) -> sqlx::Resu
         // within the supplier's lead time. Default lead time of
         // 7 days when the supplier is unknown.
         let lead_time = lead_time.unwrap_or(7) as f64;
-        let urgency = if qty == 0 {
-            Urgency::Urgent
-        } else if days_to_stockout.map(|d| d <= lead_time).unwrap_or(false) {
+        let stockout_within_lead = days_to_stockout.map(|d| d <= lead_time).unwrap_or(false);
+        let urgency = if qty == 0 || stockout_within_lead {
             Urgency::Urgent
         } else {
             Urgency::Low
@@ -161,14 +160,12 @@ pub async fn reorder_report(pool: &SqlitePool, lookback_days: i64) -> sqlx::Resu
     // Group by supplier into draft POs.
     let mut by_supplier: std::collections::HashMap<Option<String>, DraftPo> = Default::default();
     for s in &suggestions {
-        let entry = by_supplier
-            .entry(s.supplier.clone())
-            .or_insert(DraftPo {
-                supplier_id: s.supplier.clone(),
-                total: 0.0,
-                lines: Vec::new(),
-                item_ids: Vec::new(),
-            });
+        let entry = by_supplier.entry(s.supplier.clone()).or_insert(DraftPo {
+            supplier_id: s.supplier.clone(),
+            total: 0.0,
+            lines: Vec::new(),
+            item_ids: Vec::new(),
+        });
         let line_total = (s.reorder_qty as f64) * s.estimated_unit_cost;
         entry.total += line_total;
         entry.lines.push(PurchaseLine {
