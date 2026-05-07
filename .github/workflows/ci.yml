@@ -60,3 +60,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked --bin racklog
+
+  # Supply-chain checks. Configured in deny.toml.
+  #   * `licenses`   — fails on any dep with a license outside the
+  #                    allow-list (catches GPL/AGPL drift early).
+  #   * `advisories` — RustSec vulnerability database; warns on
+  #                    yanked versions.
+  #   * `bans`       — wildcards = deny; duplicate versions = warn.
+  #   * `sources`    — only crates.io.
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses advisories bans sources

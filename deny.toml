@@ -1,0 +1,69 @@
+# cargo-deny configuration. Three things we want CI to catch:
+#
+#   1. Pulled-in code with a license that's incompatible with our
+#      Apache-2.0 distribution, or that we just don't want to ship
+#      (GPL/AGPL/copyleft).
+#   2. Known security advisories from RustSec against any dep in our
+#      lockfile.
+#   3. Duplicate versions of the same crate. Often signals a
+#      transitive dep churn that could be smoothed by bumping a
+#      direct dep.
+#
+# Run locally with `cargo deny check`.
+
+[graph]
+# Only the targets we actually build for. Stops the resolver from
+# pulling in Windows/macOS-only deps just to lint them.
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-unknown-linux-gnu" },
+]
+all-features = false
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = []
+
+[licenses]
+version = 2
+# Open-source licenses we accept. Apache + MIT + BSD-style + a couple
+# of permissive odds and ends.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",          # weak copyleft; file-level only
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+    "CC0-1.0",
+    "Unlicense",
+    "BSL-1.0",
+]
+confidence-threshold = 0.93
+
+[bans]
+# Multiple-versions: warn-only by default. Bumping to deny is
+# reasonable once the tree stabilises; today axum 0.7 vs hyper 1
+# transitive churn would generate too much noise.
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+# Crates we don't want anyone reaching for from within our tree.
+# Keep this list short; adding here is a real maintenance cost.
+deny = []
+
+[sources]
+# Only crates.io. No git submodules, no private registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
