@@ -317,7 +317,13 @@ async fn retain_activity(
             "retain_activity",
         )?;
     }
-    let days = q.days.unwrap_or(365).max(1);
+    // Floor the retention window at a week. The previous .max(1)
+    // meant a typo of `?days=1` would cull almost every audit row;
+    // 7 days is short enough to still be useful for log rotation
+    // but long enough that an accidental click doesn't wipe a
+    // forensically useful history.
+    const MIN_RETAIN_DAYS: i64 = 7;
+    let days = q.days.unwrap_or(365).max(MIN_RETAIN_DAYS);
     let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
     let cutoff_ts = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
 

@@ -219,6 +219,38 @@ async fn sync(
     Path(id): Path<String>,
     Json(input): Json<SyncInput>,
 ) -> ApiResult<Json<Tracker>> {
+    // Bound the user-controlled fields. Lat/lng are GPS so the only
+    // sane domain is [-90, 90] / [-180, 180]; battery is a percentage;
+    // label is a short human-readable string. All optional, so we
+    // only validate the Some(_) branches.
+    if let Some(lat) = input.last_seen_lat {
+        if !lat.is_finite() || !(-90.0..=90.0).contains(&lat) {
+            return Err(ApiError::BadRequest(
+                "last_seen_lat must be in [-90, 90]".into(),
+            ));
+        }
+    }
+    if let Some(lng) = input.last_seen_lng {
+        if !lng.is_finite() || !(-180.0..=180.0).contains(&lng) {
+            return Err(ApiError::BadRequest(
+                "last_seen_lng must be in [-180, 180]".into(),
+            ));
+        }
+    }
+    if let Some(b) = input.battery_pct {
+        if !(0..=100).contains(&b) {
+            return Err(ApiError::BadRequest(
+                "battery_pct must be in [0, 100]".into(),
+            ));
+        }
+    }
+    if let Some(label) = &input.last_seen_label {
+        if label.len() > 256 {
+            return Err(ApiError::BadRequest(
+                "last_seen_label must be ≤ 256 chars".into(),
+            ));
+        }
+    }
     let mut tx = state.pool.begin().await?;
     let res = sqlx::query(
         "UPDATE trackers SET
