@@ -44,6 +44,32 @@ impl Harness {
         Self::boot_full(None, true, providers).await
     }
 
+    /// Like boot() but with a custom per-user session cap. Used by
+    /// the concurrent-session-cap regression test which would
+    /// otherwise need 11 logins to exercise the default cap of 10.
+    pub async fn boot_with_session_cap(cap: i64) -> Self {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut db_path = tmp.path().to_path_buf();
+        db_path.push("racklog-test.db");
+        let url = format!("sqlite://{}?mode=rwc", db_path.display());
+
+        let mut cfg = Config::for_test(&url, None);
+        cfg.seed_on_empty = false;
+        cfg.max_sessions_per_user = cap;
+
+        let pool = db::connect(&url).await.expect("pool");
+        db::migrate(&pool).await.expect("migrate");
+
+        let state = AppState::with_providers(pool.clone(), cfg, Vec::new());
+        let router = routes::serve(state);
+        Self {
+            router,
+            pool,
+            token: None,
+            _tmp: tmp,
+        }
+    }
+
     /// Like boot() but with the /api/events HMAC enabled using
     /// `secret`. Lets tests exercise both the signed-and-accepted
     /// and the rejected-on-bad-sig paths.

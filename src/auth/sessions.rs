@@ -40,11 +40,13 @@ pub async fn create(
     pool: &SqlitePool,
     user_id: &str,
     ttl_hours: i64,
+    max_per_user: i64,
 ) -> sqlx::Result<CreatedSession> {
     let plaintext = random_token();
     let token_hash = hash_token(&plaintext);
     let expires_at = Utc::now() + Duration::hours(ttl_hours.max(1));
     let expires_at_str = expires_at.format("%Y-%m-%d %H:%M:%S").to_string();
+    let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO sessions (token_hash, user_id, expires_at)
          VALUES (?, ?, ?)",
@@ -52,8 +54,29 @@ pub async fn create(
     .bind(&token_hash)
     .bind(user_id)
     .bind(&expires_at_str)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    // Cap concurrent sessions: delete the oldest beyond the limit so
+    // a stolen browser cookie can't cohabit with a fresh login
+    // forever. Order by `id DESC` (AUTOINCREMENT primary key) rather
+    // than `created_at` because the latter is second-precision and
+    // ties are non-deterministic when multiple logins land in the
+    // same second. `LIMIT -1 OFFSET cap` is SQLite's idiom for
+    // "everything past row N of the ordered result".
+    let cap = max_per_user.max(1);
+    sqlx::query(
+        "DELETE FROM sessions WHERE id IN (
+            SELECT id FROM sessions
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT -1 OFFSET ?
+         )",
+    )
+    .bind(user_id)
+    .bind(cap)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(CreatedSession {
         plaintext,
         expires_at,

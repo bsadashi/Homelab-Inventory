@@ -86,7 +86,11 @@ fn peer_is_trusted(request: &Request<axum::body::Body>, state: &AppState) -> boo
         return true;
     };
     let ip = addr.0.ip();
-    state.cfg.trusted_proxy_cidrs.iter().any(|net| net.contains(&ip))
+    state
+        .cfg
+        .trusted_proxy_cidrs
+        .iter()
+        .any(|net| net.contains(&ip))
 }
 
 fn snapshot_credentials(request: &Request<axum::body::Body>, trust_forwarded: bool) -> Credentials {

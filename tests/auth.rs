@@ -162,6 +162,50 @@ async fn login_rejects_wrong_password() {
 }
 
 #[tokio::test]
+async fn concurrent_sessions_capped_per_user() {
+    // Audit follow-up: a user accumulating sessions past the cap
+    // (one fresh login per browser tab forever) is a footgun — a
+    // stolen cookie persists indefinitely. The cap should evict
+    // the oldest sessions when a new one is minted.
+    let h = Harness::boot_with_session_cap(3).await;
+    // Use a unique username so we don't share the throttle bucket
+    // (process-wide global) with parallel tests like
+    // login_throttle_returns_429_after_burst. Five logins in a row
+    // sits well under the 10-attempt default burst, so no
+    // throttle::reset_for_tests() call is needed.
+    let _ = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({"username": "session_cap_user", "password": "correcthorse"}),
+    )
+    .await;
+    let mut cookies = Vec::new();
+    for _ in 0..5 {
+        let resp = raw_post(
+            &h,
+            "/api/auth/login",
+            j!({"username": "session_cap_user", "password": "correcthorse"}),
+        )
+        .await;
+        if let Some(c) = common::extract_session_cookie(&resp) {
+            cookies.push(c);
+        }
+    }
+    assert_eq!(cookies.len(), 5, "all five logins issued cookies");
+    // First two should now be 401 (evicted), last three still OK.
+    let evicted = &cookies[..2];
+    let live = &cookies[2..];
+    for c in evicted {
+        let resp = common::get_with(&h, "/api/auth/me", c).await;
+        expect_status(&resp, StatusCode::UNAUTHORIZED);
+    }
+    for c in live {
+        let resp = common::get_with(&h, "/api/auth/me", c).await;
+        expect_ok(&resp);
+    }
+}
+
+#[tokio::test]
 async fn login_throttle_returns_429_after_burst() {
     // Pen-test regression: brute-force on a known username had no
     // throttle. After RACKLOG_LOGIN_BURST attempts the next attempt

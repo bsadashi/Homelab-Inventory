@@ -307,16 +307,12 @@ async fn create_api_key(
     if input.label.trim().is_empty() || input.label.len() > 128 {
         return Err(ApiError::BadRequest("label must be 1–128 chars".into()));
     }
-    let scope = match input.scope.as_deref().unwrap_or("inherit") {
-        s => api_keys::KeyScope::parse(s).ok_or_else(|| {
-            ApiError::BadRequest("scope must be inherit / viewer / operator".into())
-        })?,
-    };
+    let scope = api_keys::KeyScope::parse(input.scope.as_deref().unwrap_or("inherit"))
+        .ok_or_else(|| ApiError::BadRequest("scope must be inherit / viewer / operator".into()))?;
     let _user = users::find_by_id(&state.pool, &input.user_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let created =
-        api_keys::create(&state.pool, &input.user_id, input.label.trim(), scope).await?;
+    let created = api_keys::create(&state.pool, &input.user_id, input.label.trim(), scope).await?;
     audit::log(
         &state.pool,
         &auth.username,

@@ -120,9 +120,14 @@ async fn signup(
     throttle::note_success(&username);
     let _ = users::touch_last_login(&state.pool, &user.id).await;
 
-    let session = sessions::create(&state.pool, &user.id, sessions::DEFAULT_TTL_HOURS)
-        .await
-        .map_err(ApiError::Database)?;
+    let session = sessions::create(
+        &state.pool,
+        &user.id,
+        sessions::DEFAULT_TTL_HOURS,
+        state.cfg.max_sessions_per_user,
+    )
+    .await
+    .map_err(ApiError::Database)?;
 
     record(
         &state.pool,
@@ -199,9 +204,14 @@ async fn login(
 
     let _ = users::touch_last_login(&state.pool, &user.id).await;
 
-    let session = sessions::create(&state.pool, &user.id, sessions::DEFAULT_TTL_HOURS)
-        .await
-        .map_err(ApiError::Database)?;
+    let session = sessions::create(
+        &state.pool,
+        &user.id,
+        sessions::DEFAULT_TTL_HOURS,
+        state.cfg.max_sessions_per_user,
+    )
+    .await
+    .map_err(ApiError::Database)?;
 
     record(
         &state.pool,

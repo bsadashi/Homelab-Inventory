@@ -62,9 +62,7 @@ async fn apply_reorder(
         ));
     }
     let supplied_token = q.token.as_deref().ok_or_else(|| {
-        ApiError::BadRequest(
-            "?token=… from a prior GET /api/forecast/reorder is required".into(),
-        )
+        ApiError::BadRequest("?token=… from a prior GET /api/forecast/reorder is required".into())
     })?;
     let report = reorder_report(&state.pool, q.lookback.unwrap_or(DEFAULT_LOOKBACK_DAYS)).await?;
     if supplied_token != report.token {

@@ -35,6 +35,9 @@ pub struct Config {
     /// but worth tightening when sensors live outside the trust
     /// boundary.
     pub events_hmac_secret: Option<String>,
+    /// Maximum live sessions per user. Older sessions get evicted
+    /// FIFO when a new login pushes past the cap.
+    pub max_sessions_per_user: i64,
     /// Comma-separated CIDR ranges allowed to set X-Forwarded-User
     /// / X-Forwarded-Groups. Only consulted when
     /// `trust_forwarded_headers` is true. Empty means "trust any
@@ -76,6 +79,7 @@ impl Config {
             allow_origin: AllowOrigin::SameOrigin,
             trust_forwarded_headers: false,
             events_hmac_secret: None,
+            max_sessions_per_user: 10,
             trusted_proxy_cidrs: Vec::new(),
         }
     }
@@ -133,6 +137,11 @@ impl Config {
         let events_hmac_secret = std::env::var("RACKLOG_EVENTS_HMAC_SECRET")
             .ok()
             .filter(|s| !s.is_empty());
+        let max_sessions_per_user: i64 = std::env::var("RACKLOG_MAX_SESSIONS_PER_USER")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|n: &i64| *n >= 1)
+            .unwrap_or(10);
 
         let trusted_proxy_cidrs = match std::env::var("RACKLOG_TRUSTED_PROXY_CIDR") {
             Ok(v) if !v.is_empty() => {
@@ -166,6 +175,7 @@ impl Config {
             allow_origin,
             trust_forwarded_headers,
             events_hmac_secret,
+            max_sessions_per_user,
             trusted_proxy_cidrs,
         })
     }
