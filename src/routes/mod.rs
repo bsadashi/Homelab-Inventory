@@ -136,26 +136,31 @@ fn api_routes() -> Router<AppState> {
 }
 
 /// Default-deny CORS. Set `RACKLOG_ALLOW_ORIGIN=https://...,https://...`
-/// to widen the allowlist for cross-origin clients.
+/// to widen the allowlist for cross-origin clients. The same-origin
+/// branch returns an empty CorsLayer so OPTIONS preflights from a
+/// non-allowlisted origin don't echo back `access-control-allow-
+/// methods` / `-headers` without an accompanying `-allow-origin` —
+/// browsers would block either way, but the half-populated preflight
+/// is confusing in scan reports.
 fn build_cors(allow: &AllowOrigin) -> CorsLayer {
-    let base = CorsLayer::new()
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT]);
-
     match allow {
-        AllowOrigin::SameOrigin => base, // no Access-Control-Allow-Origin → same-origin only
+        AllowOrigin::SameOrigin => CorsLayer::new(),
         AllowOrigin::List(origins) => {
             let parsed: Vec<HeaderValue> = origins
                 .iter()
                 .filter_map(|o| HeaderValue::from_str(o).ok())
                 .collect();
-            base.allow_origin(parsed).allow_credentials(true)
+            CorsLayer::new()
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::OPTIONS,
+                ])
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
+                .allow_origin(parsed)
+                .allow_credentials(true)
         }
     }
 }
