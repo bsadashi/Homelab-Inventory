@@ -265,3 +265,46 @@ async fn non_admin_cannot_reach_user_admin_endpoints() {
     .await;
     expect_status(&resp, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn non_admin_cannot_reach_admin_observability_endpoints() {
+    // Pen-test regression: /api/admin/info, /stats, /integrity,
+    // /metrics, /whoami were previously gated only by the global
+    // Authed middleware, so a viewer-tier user could read the SQLite
+    // file path, table row counts, audit head, and trigger PRAGMA
+    // integrity_check (a free DoS handle). All five must return 403
+    // for non-admin callers now.
+    let h = Harness::boot_open_signup().await;
+    let _ = signup_admin(&h, "alice", "correcthorse").await;
+    let bob = signup_admin(&h, "bob", "anothergoodone").await;
+
+    for path in [
+        "/api/admin/info",
+        "/api/admin/stats",
+        "/api/admin/integrity",
+        "/api/admin/metrics",
+        "/api/admin/whoami",
+    ] {
+        let resp = get_with(&h, path, &bob).await;
+        expect_status(&resp, StatusCode::FORBIDDEN);
+    }
+}
+
+#[tokio::test]
+async fn admin_can_reach_admin_observability_endpoints() {
+    // Companion to the regression test above: confirm the gate is
+    // tight, not over-tight.
+    let h = Harness::boot_with(None, false).await;
+    let admin = signup_admin(&h, "alice", "correcthorse").await;
+
+    for path in [
+        "/api/admin/info",
+        "/api/admin/stats",
+        "/api/admin/integrity",
+        "/api/admin/metrics",
+        "/api/admin/whoami",
+    ] {
+        let resp = get_with(&h, path, &admin).await;
+        expect_ok(&resp);
+    }
+}

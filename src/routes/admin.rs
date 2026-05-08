@@ -58,7 +58,10 @@ struct InfoResponse {
     auth_required: bool,
 }
 
-async fn info(State(state): State<AppState>) -> ApiResult<Json<InfoResponse>> {
+async fn info(
+    State(state): State<AppState>,
+    RequireAdmin(_): RequireAdmin,
+) -> ApiResult<Json<InfoResponse>> {
     let chain = audit::verify_chain(&state.pool).await?;
     let database_path = sqlite_path(&state.cfg.database_url);
     Ok(Json(InfoResponse {
@@ -92,7 +95,10 @@ struct TableStat {
     rows: i64,
 }
 
-async fn stats(State(state): State<AppState>) -> ApiResult<Json<StatsResponse>> {
+async fn stats(
+    State(state): State<AppState>,
+    RequireAdmin(_): RequireAdmin,
+) -> ApiResult<Json<StatsResponse>> {
     let tables: &[&'static str] = &[
         "items",
         "item_stock",
@@ -150,7 +156,10 @@ struct IntegrityResponse {
     audit_version: u32,
 }
 
-async fn integrity(State(state): State<AppState>) -> ApiResult<Json<IntegrityResponse>> {
+async fn integrity(
+    State(state): State<AppState>,
+    RequireAdmin(_): RequireAdmin,
+) -> ApiResult<Json<IntegrityResponse>> {
     // PRAGMA integrity_check returns one row "ok" when healthy, or
     // multiple rows describing problems otherwise.
     let rows: Vec<(String,)> = sqlx::query_as("PRAGMA integrity_check")
@@ -368,7 +377,10 @@ async fn retain_activity(
 
 // ---- /metrics (Prometheus) ---------------------------------------------
 
-async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+async fn metrics(
+    State(state): State<AppState>,
+    RequireAdmin(_): RequireAdmin,
+) -> impl IntoResponse {
     let chain = audit::verify_chain(&state.pool).await.ok();
     let mut s = String::new();
     s.push_str("# HELP racklog_uptime_seconds Process uptime in seconds.\n");
@@ -446,7 +458,10 @@ struct WhoamiResponse {
     server_time: String,
 }
 
-async fn whoami(State(state): State<AppState>) -> Json<WhoamiResponse> {
+async fn whoami(
+    State(state): State<AppState>,
+    RequireAdmin(_): RequireAdmin,
+) -> Json<WhoamiResponse> {
     // The auth middleware would have already 401'd if a token was
     // required and missing. Reaching here means the request passed
     // (or no token is required at all).
