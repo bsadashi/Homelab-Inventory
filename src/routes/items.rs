@@ -241,6 +241,19 @@ fn validate(input: &ItemInput) -> ApiResult<()> {
     if input.qty < 0 || input.allocated < 0 {
         return Err(ApiError::BadRequest("qty and allocated must be ≥ 0".into()));
     }
+    // Reject NaN / ±Infinity / absurd magnitudes on monetary fields.
+    // SQLite stores them as REAL and serde happily round-trips NaN
+    // through JSON, which then breaks the dashboard's totals. The
+    // upper bound is generous (a $1B item is fine) but bounded so a
+    // single typo can't poison aggregate KPIs.
+    const MONEY_MAX: f64 = 1.0e9;
+    for (label, v) in [("cost", input.cost), ("price", input.price)] {
+        if !v.is_finite() || !(0.0..=MONEY_MAX).contains(&v) {
+            return Err(ApiError::BadRequest(format!(
+                "{label} must be a finite number in [0, {MONEY_MAX}]"
+            )));
+        }
+    }
     Ok(())
 }
 
