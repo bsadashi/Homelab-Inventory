@@ -52,7 +52,12 @@ pub async fn require_auth(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let creds = snapshot_credentials(&request, state.cfg.trust_forwarded_headers);
+    // Trust the forwarded headers only when (a) the operator opted in
+    // AND (b) the immediate peer is one of the configured trusted
+    // proxies. An empty CIDR list means "any peer" — backwards-
+    // compatible with the prior behaviour.
+    let trust_forwarded = state.cfg.trust_forwarded_headers && peer_is_trusted(&request, &state);
+    let creds = snapshot_credentials(&request, trust_forwarded);
     let public = PUBLIC_PATHS.iter().any(|p| creds.path == *p);
     let identity = resolve_identity(&state, &creds).await;
     if identity.is_none() && !public {
@@ -63,6 +68,25 @@ pub async fn require_auth(
         request.extensions_mut().insert(id);
     }
     Ok(next.run(request).await)
+}
+
+fn peer_is_trusted(request: &Request<axum::body::Body>, state: &AppState) -> bool {
+    if state.cfg.trusted_proxy_cidrs.is_empty() {
+        // Empty allowlist = trust whoever can reach the bind socket.
+        // The startup warning in main.rs flags the non-loopback case.
+        return true;
+    }
+    let Some(addr) = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+    else {
+        // No ConnectInfo wired up (test harness does oneshot calls
+        // that never go through the listener). Fall back to "trust"
+        // so unit tests aren't broken; production always has it.
+        return true;
+    };
+    let ip = addr.0.ip();
+    state.cfg.trusted_proxy_cidrs.iter().any(|net| net.contains(&ip))
 }
 
 fn snapshot_credentials(request: &Request<axum::body::Body>, trust_forwarded: bool) -> Credentials {

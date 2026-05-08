@@ -35,6 +35,12 @@ pub struct Config {
     /// but worth tightening when sensors live outside the trust
     /// boundary.
     pub events_hmac_secret: Option<String>,
+    /// Comma-separated CIDR ranges allowed to set X-Forwarded-User
+    /// / X-Forwarded-Groups. Only consulted when
+    /// `trust_forwarded_headers` is true. Empty means "trust any
+    /// peer that can reach the bind socket" — fine on a loopback
+    /// bind behind a single proxy, dangerous otherwise.
+    pub trusted_proxy_cidrs: Vec<ipnet::IpNet>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -70,6 +76,7 @@ impl Config {
             allow_origin: AllowOrigin::SameOrigin,
             trust_forwarded_headers: false,
             events_hmac_secret: None,
+            trusted_proxy_cidrs: Vec::new(),
         }
     }
 
@@ -127,6 +134,24 @@ impl Config {
             .ok()
             .filter(|s| !s.is_empty());
 
+        let trusted_proxy_cidrs = match std::env::var("RACKLOG_TRUSTED_PROXY_CIDR") {
+            Ok(v) if !v.is_empty() => {
+                let mut out = Vec::new();
+                for part in v.split(',') {
+                    let p = part.trim();
+                    if p.is_empty() {
+                        continue;
+                    }
+                    let net: ipnet::IpNet = p.parse().map_err(|e: ipnet::AddrParseError| {
+                        ConfigError::Invalid("RACKLOG_TRUSTED_PROXY_CIDR", format!("{p}: {e}"))
+                    })?;
+                    out.push(net);
+                }
+                out
+            }
+            _ => Vec::new(),
+        };
+
         Ok(Self {
             bind,
             database_url,
@@ -141,6 +166,7 @@ impl Config {
             allow_origin,
             trust_forwarded_headers,
             events_hmac_secret,
+            trusted_proxy_cidrs,
         })
     }
 }
