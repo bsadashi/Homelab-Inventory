@@ -44,6 +44,33 @@ impl Harness {
         Self::boot_full(None, true, providers).await
     }
 
+    /// Like boot() but with the /api/events HMAC enabled using
+    /// `secret`. Lets tests exercise both the signed-and-accepted
+    /// and the rejected-on-bad-sig paths.
+    pub async fn boot_with_events_hmac(secret: &str) -> Self {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut db_path = tmp.path().to_path_buf();
+        db_path.push("racklog-test.db");
+        let url = format!("sqlite://{}?mode=rwc", db_path.display());
+
+        let mut cfg = Config::for_test(&url, None);
+        cfg.seed_on_empty = true;
+        cfg.events_hmac_secret = Some(secret.to_string());
+
+        let pool = db::connect(&url).await.expect("pool");
+        db::migrate(&pool).await.expect("migrate");
+        seed::seed_if_empty(&pool).await.expect("seed");
+
+        let state = AppState::with_providers(pool.clone(), cfg, Vec::new());
+        let router = routes::serve(state);
+        Self {
+            router,
+            pool,
+            token: None,
+            _tmp: tmp,
+        }
+    }
+
     /// Like boot() but with `cfg.open_signup = true` so tests can
     /// register a second non-admin user. Uses a Config flag rather
     /// than an env var because env vars leak across the parallel

@@ -1052,6 +1052,78 @@ async fn events_endpoint_caps_payload_size() {
     expect_status(&resp, StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+async fn events_endpoint_enforces_hmac_when_configured() {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    use tower::util::ServiceExt;
+    let secret = "shh-test-secret";
+    let h = Harness::boot_with_events_hmac(secret).await;
+    let body = serde_json::json!({
+        "kind": "matter.cabinet_opened",
+        "description": "test",
+    })
+    .to_string();
+    let ts = chrono::Utc::now().timestamp().to_string();
+
+    // Missing headers — 400.
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/api/events")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(axum::body::Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    expect_status(&resp, StatusCode::BAD_REQUEST);
+
+    // Wrong signature — 401.
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/api/events")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .header("X-Racklog-Timestamp", &ts)
+                .header("X-Racklog-Signature", "sha256=00")
+                .body(axum::body::Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    expect_status(&resp, StatusCode::UNAUTHORIZED);
+
+    // Correct signature — 201.
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secret.as_bytes()).unwrap();
+    mac.update(ts.as_bytes());
+    mac.update(b".");
+    mac.update(body.as_bytes());
+    let sig = hex::encode(mac.finalize().into_bytes());
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/api/events")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .header("X-Racklog-Timestamp", &ts)
+                .header("X-Racklog-Signature", format!("sha256={sig}"))
+                .body(axum::body::Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    expect_status(&resp, StatusCode::CREATED);
+}
+
 // ---- search escape ------------------------------------------------------
 
 #[tokio::test]

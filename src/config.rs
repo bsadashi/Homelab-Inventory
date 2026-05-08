@@ -27,6 +27,14 @@ pub struct Config {
     pub log_format: LogFormat,
     pub allow_origin: AllowOrigin,
     pub trust_forwarded_headers: bool,
+    /// Shared secret for HMAC verification on /api/events. When
+    /// set, ingest requires both `X-Racklog-Signature` and
+    /// `X-Racklog-Timestamp` headers — see `routes/events.rs`.
+    /// When unset, /api/events accepts any authed request, which
+    /// is fine for a homelab where API keys are tightly scoped
+    /// but worth tightening when sensors live outside the trust
+    /// boundary.
+    pub events_hmac_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -61,6 +69,7 @@ impl Config {
             log_format: LogFormat::Pretty,
             allow_origin: AllowOrigin::SameOrigin,
             trust_forwarded_headers: false,
+            events_hmac_secret: None,
         }
     }
 
@@ -114,6 +123,9 @@ impl Config {
         };
 
         let trust_forwarded_headers = parse_bool("RACKLOG_TRUST_FORWARDED_HEADERS", false);
+        let events_hmac_secret = std::env::var("RACKLOG_EVENTS_HMAC_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty());
 
         Ok(Self {
             bind,
@@ -128,6 +140,7 @@ impl Config {
             log_format,
             allow_origin,
             trust_forwarded_headers,
+            events_hmac_secret,
         })
     }
 }

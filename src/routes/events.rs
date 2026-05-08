@@ -12,11 +12,15 @@ use crate::audit::log;
 use crate::auth::Authed;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
+use axum::body::Bytes;
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
-use axum::{Json, Router};
+use axum::Router;
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
+use subtle::ConstantTimeEq;
 
 /// Caller-domain prefixes the audit log will accept from this
 /// endpoint. Anything else is rejected so a stolen sensor key can
@@ -61,11 +65,29 @@ struct IngestResponse {
     recorded_as: String,
 }
 
+/// Maximum age of `X-Racklog-Timestamp` accepted by the HMAC
+/// verifier. Generous enough to cover normal client/server clock
+/// drift; tight enough to make replay infeasible.
+const HMAC_TIMESTAMP_WINDOW_SECS: i64 = 300;
+
 async fn ingest(
     State(state): State<AppState>,
     Authed(auth): Authed,
-    Json(input): Json<EventInput>,
-) -> ApiResult<(StatusCode, Json<IngestResponse>)> {
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<(StatusCode, axum::Json<IngestResponse>)> {
+    // 0. Optional HMAC + timestamp verification. Disabled by default
+    // (homelab API keys already provide authenticity); enabled by
+    // setting RACKLOG_EVENTS_HMAC_SECRET. When on, the client signs
+    // `<timestamp>.<body>` with HMAC-SHA256 and presents both the
+    // timestamp and signature in headers. The timestamp covers
+    // replay; the signature covers tampering even if a key has
+    // been re-used to forge a synthetic event.
+    if let Some(secret) = state.cfg.events_hmac_secret.as_deref() {
+        verify_hmac(secret, &headers, &body)?;
+    }
+    let input: EventInput = serde_json::from_slice(&body)
+        .map_err(|e| ApiError::BadRequest(format!("invalid JSON: {e}")))?;
     // 1. Validate prefix.
     let kind_ok = ALLOWED_KIND_PREFIXES
         .iter()
@@ -129,9 +151,50 @@ async fn ingest(
 
     Ok((
         StatusCode::CREATED,
-        Json(IngestResponse {
+        axum::Json(IngestResponse {
             ok: true,
             recorded_as: input.kind,
         }),
     ))
+}
+
+fn verify_hmac(secret: &str, headers: &HeaderMap, body: &[u8]) -> ApiResult<()> {
+    let ts = headers
+        .get("X-Racklog-Timestamp")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| ApiError::BadRequest("X-Racklog-Timestamp header required".into()))?;
+    let sig_hdr = headers
+        .get("X-Racklog-Signature")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| ApiError::BadRequest("X-Racklog-Signature header required".into()))?;
+    let presented = sig_hdr
+        .strip_prefix("sha256=")
+        .ok_or_else(|| ApiError::BadRequest("X-Racklog-Signature must be sha256=<hex>".into()))?;
+    let presented_bytes = hex::decode(presented)
+        .map_err(|_| ApiError::BadRequest("X-Racklog-Signature is not hex".into()))?;
+
+    let now = chrono::Utc::now().timestamp();
+    let ts_n: i64 = ts
+        .parse()
+        .map_err(|_| ApiError::BadRequest("X-Racklog-Timestamp must be unix seconds".into()))?;
+    if (now - ts_n).abs() > HMAC_TIMESTAMP_WINDOW_SECS {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Compute HMAC over "<timestamp>.<body>" so the timestamp is
+    // bound into the signature — otherwise an attacker could
+    // replace the timestamp on a captured request.
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secret.as_bytes())
+        .map_err(|_| ApiError::Other(anyhow::anyhow!("hmac key error")))?;
+    mac.update(ts.as_bytes());
+    mac.update(b".");
+    mac.update(body);
+    let expected = mac.finalize().into_bytes();
+    // Constant-time compare to keep the signature path from
+    // leaking timing info on prefix-correct attempts.
+    if expected.ct_eq(&presented_bytes).unwrap_u8() == 1 {
+        Ok(())
+    } else {
+        Err(ApiError::Unauthorized)
+    }
 }

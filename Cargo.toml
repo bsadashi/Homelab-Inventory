@@ -45,8 +45,9 @@ serde_json = "1"
 # Time
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 
-# Crypto / hashing for the audit chain
+# Crypto / hashing for the audit chain + /api/events HMAC.
 sha2 = "0.10"
+hmac = "0.12"
 hex = "0.4"
 subtle = "2"
 
