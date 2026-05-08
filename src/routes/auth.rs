@@ -156,10 +156,13 @@ async fn login(
     let (user, hash) = match lookup {
         Some((u, h)) if !u.disabled => (u, h),
         _ => {
-            // Run a hash-verify against a known-bad hash to reduce
-            // timing differences between "user does not exist" and
-            // "wrong password".
-            let _ = password::verify(&input.password, "");
+            // Run an Argon2 verify against a fixed dummy hash so the
+            // wall-time of "no such user" matches "user exists, wrong
+            // password". An earlier version of this code passed an
+            // empty string to verify(), which short-circuits before
+            // any Argon2 work — leaving a 20× timing oracle for
+            // username enumeration.
+            password::verify_dummy(&input.password);
             return Err(ApiError::Unauthorized);
         }
     };

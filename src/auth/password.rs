@@ -87,6 +87,32 @@ pub fn verify(password: &str, stored_hash: &str) -> Result<bool, PasswordError> 
         .is_ok())
 }
 
+/// Run an Argon2 verify against a fixed never-matching hash so that
+/// callers on the "no user found" code path spend the same wall-time
+/// as the "user found, wrong password" path. Used by the login
+/// handler — without this, the difference between
+/// `password::verify(_, "")` (immediate) and a real verify (~25ms
+/// production) is a clean username-existence oracle.
+///
+/// The dummy hash is computed once at first call using the same
+/// `argon2_engine()` we use for real password hashing, so cost
+/// parameters match between the two paths under both production
+/// and `#[cfg(test)]`.
+pub fn verify_dummy(password: &str) {
+    use std::sync::OnceLock;
+    static DUMMY: OnceLock<String> = OnceLock::new();
+    let h = DUMMY.get_or_init(|| {
+        // The actual content is irrelevant — verify() never matches
+        // the password against this, and we discard the result. We
+        // call hash() rather than embedding a literal PHC string so
+        // the cost parameters always track what argon2_engine()
+        // produces.
+        hash("__racklog_dummy_password__")
+            .expect("dummy hash must hash cleanly")
+    });
+    let _ = verify(password, h);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
