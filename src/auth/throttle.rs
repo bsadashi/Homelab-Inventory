@@ -115,8 +115,20 @@ pub fn reset_for_tests() {
 mod tests {
     use super::*;
 
+    /// Serialise the three tests below: they all reach into the
+    /// process-wide bucket map and call reset_for_tests(), so running
+    /// them in parallel makes each one race the others' resets.
+    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+        use std::sync::OnceLock;
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn bucket_allows_burst_then_blocks() {
+        let _g = test_lock();
         reset_for_tests();
         // Burst of 10 by default; first 10 succeed, 11th fails.
         for _ in 0..10 {
@@ -127,6 +139,7 @@ mod tests {
 
     #[test]
     fn buckets_are_per_username() {
+        let _g = test_lock();
         reset_for_tests();
         // Drain one user's bucket.
         for _ in 0..10 {
@@ -138,6 +151,7 @@ mod tests {
 
     #[test]
     fn note_success_resets_bucket() {
+        let _g = test_lock();
         reset_for_tests();
         for _ in 0..10 {
             allow_attempt("carol");

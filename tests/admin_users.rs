@@ -293,6 +293,75 @@ async fn admin_can_create_revoke_api_key_and_use_it() {
 }
 
 #[tokio::test]
+async fn viewer_scoped_api_key_cannot_mutate_even_for_admin_user() {
+    // Per-key scope regression: an admin should be able to issue a
+    // read-only key for their own user without losing their own
+    // admin powers. The key gets clamped to Viewer regardless of
+    // the user's stored role.
+    let h = Harness::boot_with(None, false).await;
+    let admin = signup_admin(&h, "alice", "correcthorse").await;
+    let me = json(get_with(&h, "/api/auth/me", &admin).await).await;
+    let alice_id = me["user"]["id"].as_str().unwrap().to_string();
+
+    let resp = post_with(
+        &h,
+        "/api/admin/api_keys",
+        &admin,
+        j!({"user_id": alice_id, "label": "kpi scraper", "scope": "viewer"}),
+    )
+    .await;
+    expect_status(&resp, StatusCode::CREATED);
+    let body = json(resp).await;
+    assert_eq!(body["scope"], "viewer");
+    let key = body["plaintext"].as_str().unwrap().to_string();
+
+    // GET works (Viewer is enough).
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/items")
+                .header(header::AUTHORIZATION, format!("Bearer {}", key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    expect_ok(&resp);
+
+    // POST is forbidden — the key clamped admin alice down to Viewer.
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/items")
+                .header(header::AUTHORIZATION, format!("Bearer {}", key))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"sku":"X","name":"X","cat":"X"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    expect_status(&resp, StatusCode::FORBIDDEN);
+
+    // Alice's session still has full admin — the cap is on the key,
+    // not on the user. Use no supplier so the empty-DB harness
+    // doesn't trip on a missing FK.
+    let resp = post_with(
+        &h,
+        "/api/items",
+        &admin,
+        j!({"sku":"OK-1","name":"Item","cat":"Tools","cost":1,"price":1,"min":1,"max":2,"qty":1,"loc":[]}),
+    )
+    .await;
+    expect_status(&resp, StatusCode::CREATED);
+}
+
+#[tokio::test]
 async fn non_admin_cannot_reach_user_admin_endpoints() {
     let h = Harness::boot_open_signup().await;
     let _ = signup_admin(&h, "alice", "correcthorse").await;

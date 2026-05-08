@@ -282,6 +282,11 @@ async fn list_api_keys(
 struct CreateApiKeyInput {
     user_id: String,
     label: String,
+    /// "inherit" (default; legacy behaviour), "viewer", or
+    /// "operator". Lets an admin issue read-only keys to scripts
+    /// without touching the owning user's role.
+    #[serde(default)]
+    scope: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -291,6 +296,7 @@ struct CreateApiKeyResponse {
     /// Plaintext key — shown exactly once. The dashboard surfaces
     /// this in a one-shot dialog.
     plaintext: String,
+    scope: String,
 }
 
 async fn create_api_key(
@@ -301,18 +307,26 @@ async fn create_api_key(
     if input.label.trim().is_empty() || input.label.len() > 128 {
         return Err(ApiError::BadRequest("label must be 1–128 chars".into()));
     }
+    let scope = match input.scope.as_deref().unwrap_or("inherit") {
+        s => api_keys::KeyScope::parse(s).ok_or_else(|| {
+            ApiError::BadRequest("scope must be inherit / viewer / operator".into())
+        })?,
+    };
     let _user = users::find_by_id(&state.pool, &input.user_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let created = api_keys::create(&state.pool, &input.user_id, input.label.trim()).await?;
+    let created =
+        api_keys::create(&state.pool, &input.user_id, input.label.trim(), scope).await?;
     audit::log(
         &state.pool,
         &auth.username,
         "api_key.create",
         Some(&created.id),
         &format!(
-            "Created API key {} for user {}",
-            created.label, input.user_id
+            "Created API key {} (scope={}) for user {}",
+            created.label,
+            created.scope.as_str(),
+            input.user_id
         ),
     )
     .await
@@ -323,6 +337,7 @@ async fn create_api_key(
             id: created.id,
             label: created.label,
             plaintext: created.plaintext,
+            scope: created.scope.as_str().to_string(),
         }),
     ))
 }
