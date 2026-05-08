@@ -162,6 +162,50 @@ async fn login_rejects_wrong_password() {
 }
 
 #[tokio::test]
+async fn login_throttle_returns_429_after_burst() {
+    // Pen-test regression: brute-force on a known username had no
+    // throttle. After RACKLOG_LOGIN_BURST attempts the next attempt
+    // for that username should return 429, regardless of whether
+    // the password is right.
+    racklog::auth::throttle::reset_for_tests();
+    let h = Harness::boot_with(None, false).await;
+    let _ = raw_post(
+        &h,
+        "/api/auth/signup",
+        j!({"username": "throttle_target", "password": "correcthorse"}),
+    )
+    .await;
+    // Default burst is 10. Drain it.
+    for _ in 0..10 {
+        let resp = raw_post(
+            &h,
+            "/api/auth/login",
+            j!({"username": "throttle_target", "password": "WRONG"}),
+        )
+        .await;
+        expect_status(&resp, StatusCode::UNAUTHORIZED);
+    }
+    // Bucket empty — next attempt is rejected with 429 regardless
+    // of password validity.
+    let resp = raw_post(
+        &h,
+        "/api/auth/login",
+        j!({"username": "throttle_target", "password": "correcthorse"}),
+    )
+    .await;
+    expect_status(&resp, StatusCode::TOO_MANY_REQUESTS);
+
+    // A different username is unaffected.
+    let resp = raw_post(
+        &h,
+        "/api/auth/login",
+        j!({"username": "different_user", "password": "WRONG"}),
+    )
+    .await;
+    expect_status(&resp, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn signup_validates_username_and_password() {
     let h = Harness::boot_with(None, false).await;
     // Bad username chars.

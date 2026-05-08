@@ -7,7 +7,7 @@
 
 use crate::audit::{record, AuditEvent};
 use crate::auth::identity::{AuthIdentity, Role};
-use crate::auth::{password, sessions, SESSION_COOKIE};
+use crate::auth::{password, sessions, throttle, SESSION_COOKIE};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use crate::users;
@@ -150,6 +150,16 @@ async fn login(
     Json(input): Json<CredentialsInput>,
 ) -> ApiResult<(StatusCode, HeaderMap, Json<AuthResponse>)> {
     let username = validate_username(&input.username)?.to_string();
+    // Charge against the per-username token bucket *before* any DB
+    // hit so a runaway bot can't keep us under load even with
+    // garbage usernames. allow_attempt() is keyed on the raw
+    // (validated) username so attacker bursts on one account can't
+    // be hidden by varying case or whitespace.
+    if !throttle::allow_attempt(&username) {
+        return Err(ApiError::TooManyRequests(
+            "too many login attempts; try again shortly".into(),
+        ));
+    }
     let lookup = users::find_by_username(&state.pool, &username).await?;
     // Constant-ish "wrong creds" path: always 401, never leak whether
     // the username exists.
@@ -170,6 +180,10 @@ async fn login(
     if !ok {
         return Err(ApiError::Unauthorized);
     }
+
+    // Refill the bucket so a one-typo user isn't punished after a
+    // legitimate login.
+    throttle::note_success(&username);
 
     let _ = users::touch_last_login(&state.pool, &user.id).await;
 

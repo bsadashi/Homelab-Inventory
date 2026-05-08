@@ -20,6 +20,7 @@ pub mod identity;
 pub mod middleware;
 pub mod password;
 pub mod sessions;
+pub mod throttle;
 
 pub use extractors::{Authed, RequireAdmin, RequireOperator, RequireViewer};
 pub use identity::{AuthIdentity, AuthSource, Role};

@@ -23,6 +23,9 @@ pub enum ApiError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    #[error("too many requests: {0}")]
+    TooManyRequests(String),
+
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 
@@ -41,6 +44,7 @@ impl ApiError {
             ApiError::Forbidden => StatusCode::FORBIDDEN,
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::Conflict(_) => StatusCode::CONFLICT,
+            ApiError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Database(sqlx::Error::RowNotFound) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -53,6 +57,7 @@ impl ApiError {
             ApiError::Forbidden => "forbidden",
             ApiError::BadRequest(_) => "bad_request",
             ApiError::Conflict(_) => "conflict",
+            ApiError::TooManyRequests(_) => "too_many_requests",
             ApiError::Database(sqlx::Error::RowNotFound) => "not_found",
             ApiError::Database(_) => "database_error",
             ApiError::Json(_) => "json_error",
