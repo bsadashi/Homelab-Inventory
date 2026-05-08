@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 pub struct DigiKey {
     client_id: String,
-    client_secret: String,
+    client_secret: super::Redacted,
     site: String,
     language: String,
     currency: String,
@@ -29,11 +29,15 @@ pub struct DigiKey {
 
 #[derive(Clone)]
 struct CachedToken {
-    value: String,
+    value: super::Redacted,
     expires_at: Instant,
 }
 
-#[derive(Debug, Deserialize)]
+/// Intentionally NOT `Debug` — we never want a typo of
+/// `tracing::debug!("{:?}", parsed)` to print the OAuth bearer
+/// token. Field access goes through explicit moves at the call
+/// site, so removing Debug breaks nothing.
+#[derive(Deserialize)]
 struct TokenResponse {
     access_token: String,
     expires_in: Option<u64>,
@@ -84,7 +88,7 @@ impl DigiKey {
         let token_url = format!("{}/v1/oauth2/token", base_url);
         Self {
             client_id,
-            client_secret,
+            client_secret: super::Redacted::new(client_secret),
             site,
             language,
             currency,
@@ -99,7 +103,7 @@ impl DigiKey {
             let guard = self.token.lock().unwrap();
             if let Some(c) = &*guard {
                 if c.expires_at > Instant::now() {
-                    return Ok(c.value.clone());
+                    return Ok(c.value.expose().to_string());
                 }
             }
         }
@@ -108,26 +112,30 @@ impl DigiKey {
             .form(&[
                 ("grant_type", "client_credentials"),
                 ("client_id", &self.client_id),
-                ("client_secret", &self.client_secret),
+                ("client_secret", self.client_secret.expose()),
             ])
             .send()
             .await?;
         if !resp.status().is_success() {
             let s = resp.status();
-            let body = resp.text().await.unwrap_or_default();
+            // Don't include the body — DigiKey error responses can
+            // echo back form fields including client_id / client_secret
+            // depending on their misconfiguration mode. Status alone
+            // is enough to diagnose the common cases.
+            let _body = resp.text().await.unwrap_or_default();
             return Err(LookupError::Provider(format!(
-                "digikey token mint failed: {} {}",
-                s, body
+                "digikey token mint failed: status {s}"
             )));
         }
         let parsed: TokenResponse = resp.json().await?;
         let lifetime = Duration::from_secs(parsed.expires_in.unwrap_or(540));
+        let access = parsed.access_token;
         let cached = CachedToken {
-            value: parsed.access_token.clone(),
+            value: super::Redacted::new(access.clone()),
             expires_at: Instant::now() + lifetime.saturating_sub(Duration::from_secs(30)),
         };
         *self.token.lock().unwrap() = Some(cached);
-        Ok(parsed.access_token)
+        Ok(access)
     }
 }
 

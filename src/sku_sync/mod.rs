@@ -15,6 +15,38 @@ pub mod upcitemdb;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Newtype wrapper that prevents accidental disclosure of a secret
+/// (DigiKey client_secret, OAuth access tokens, …) via Debug or
+/// Display. Wrap any string field that should never appear in logs,
+/// panic backtraces, or error rendering. The secret is still usable
+/// — `expose()` returns `&str` for the call sites that genuinely
+/// need it.
+#[derive(Clone)]
+pub struct Redacted(String);
+
+impl Redacted {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Print just enough to be diagnostically useful (length)
+        // without leaking any prefix that could narrow a brute force.
+        write!(f, "Redacted(<{} bytes>)", self.0.len())
+    }
+}
+
+impl std::fmt::Display for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
 /// Normalised lookup result. Providers populate what they can; missing
 /// fields stay None so the frontend can decide what to surface.
 #[derive(Debug, Clone, Serialize, Deserialize)]
