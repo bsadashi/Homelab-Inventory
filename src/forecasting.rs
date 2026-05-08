@@ -65,6 +65,11 @@ pub struct ForecastReport {
     pub urgent: usize,
     pub suggestions: Vec<ReorderSuggestion>,
     pub draft_pos: Vec<DraftPo>,
+    /// SHA-256 over the materially apply-relevant fields of this
+    /// report. The /api/forecast/reorder POST requires the caller
+    /// to echo this back as `?token=…`; the server caches recently-
+    /// applied tokens to refuse double-clicks. See `report_token`.
+    pub token: String,
 }
 
 pub async fn reorder_report(pool: &SqlitePool, lookback_days: i64) -> sqlx::Result<ForecastReport> {
@@ -184,13 +189,49 @@ pub async fn reorder_report(pool: &SqlitePool, lookback_days: i64) -> sqlx::Resu
         (None, None) => std::cmp::Ordering::Equal,
     });
 
+    let token = report_token(lookback_days, &suggestions, &draft_pos);
     Ok(ForecastReport {
         lookback_days,
         items_below_min: suggestions.len(),
         urgent,
         suggestions,
         draft_pos,
+        token,
     })
+}
+
+/// Hash the apply-relevant slice of the report so /api/forecast/reorder
+/// POST can require the caller to echo it back. The token covers the
+/// lookback, the per-item suggested quantities, and the per-supplier
+/// draft totals — anything that changes the materialised POs flips
+/// the token, so a stale report tab can't apply against a moved
+/// catalog.
+fn report_token(
+    lookback_days: i64,
+    suggestions: &[ReorderSuggestion],
+    draft_pos: &[DraftPo],
+) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"racklog.forecast.v1\n");
+    h.update(lookback_days.to_le_bytes());
+    h.update(b"\nsuggestions\n");
+    for s in suggestions {
+        h.update(s.item_id.as_bytes());
+        h.update(b"|");
+        h.update(s.reorder_qty.to_le_bytes());
+        h.update(b"\n");
+    }
+    h.update(b"draft_pos\n");
+    for d in draft_pos {
+        h.update(d.supplier_id.as_deref().unwrap_or("-").as_bytes());
+        h.update(b"|");
+        h.update(d.total.to_le_bytes());
+        h.update(b"|");
+        h.update((d.lines.len() as u32).to_le_bytes());
+        h.update(b"\n");
+    }
+    hex::encode(h.finalize())
 }
 
 /// For a fresh `Item`, compute the projected days to stockout on the
