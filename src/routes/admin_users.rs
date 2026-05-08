@@ -120,6 +120,12 @@ async fn update_role(
     if n == 0 {
         return Err(ApiError::NotFound);
     }
+    // Revoke existing sessions so the role change takes effect on the
+    // next request rather than waiting up to 30 days for the cookie
+    // to expire. A demoted admin keeping their elevated session was
+    // the original gap; the disable + password-reset paths already
+    // do this — bring role-change in line with them.
+    let _ = sessions::revoke_all_for_user(&state.pool, &id).await;
     let user = users::find_by_id(&state.pool, &id)
         .await?
         .ok_or(ApiError::NotFound)?;

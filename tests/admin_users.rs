@@ -185,6 +185,53 @@ async fn admin_password_reset_invalidates_target_sessions() {
 }
 
 #[tokio::test]
+async fn role_change_revokes_existing_sessions() {
+    // Audit regression: a demoted admin previously kept their
+    // elevated cookie until the 30-day TTL expired, because
+    // update_role didn't revoke sessions like disable / password
+    // reset already do. After the fix, role change must invalidate
+    // the user's outstanding sessions.
+    let h = Harness::boot_with(None, false).await;
+    let admin = signup_admin(&h, "alice", "correcthorse").await;
+    // Create bob as an operator and grab his session cookie.
+    let _ = post_with(
+        &h,
+        "/api/admin/users",
+        &admin,
+        j!({"username": "bob", "password": "anothergoodone", "role": "operator"}),
+    )
+    .await;
+    let bob_cookie = common::login_user(&h, "bob", "anothergoodone").await;
+    expect_ok(&get_with(&h, "/api/auth/me", &bob_cookie).await);
+
+    let bob_id = json(get_with(&h, "/api/admin/users", &admin).await)
+        .await
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == "bob")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Admin demotes bob to viewer.
+    let resp = post_with(
+        &h,
+        &format!("/api/admin/users/{}/role", bob_id),
+        &admin,
+        j!({"role": "viewer"}),
+    )
+    .await;
+    expect_ok(&resp);
+
+    // Bob's old session must be 401 now — no more elevated
+    // cookie hanging around for the 30-day TTL.
+    let after = get_with(&h, "/api/auth/me", &bob_cookie).await;
+    expect_status(&after, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn admin_can_create_revoke_api_key_and_use_it() {
     let h = Harness::boot_with(None, false).await;
     let admin = signup_admin(&h, "alice", "correcthorse").await;

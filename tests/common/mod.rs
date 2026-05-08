@@ -336,3 +336,16 @@ pub async fn signup_user(h: &Harness, username: &str, password: &str) -> String 
     extract_session_cookie(&resp)
         .unwrap_or_else(|| panic!("signup failed: status {}", resp.status()))
 }
+
+/// Log in an existing user via /api/auth/login and return the session
+/// cookie. Mirrors signup_user — panics on failure.
+pub async fn login_user(h: &Harness, username: &str, password: &str) -> String {
+    let resp = raw_post(
+        h,
+        "/api/auth/login",
+        serde_json::json!({"username": username, "password": password}),
+    )
+    .await;
+    extract_session_cookie(&resp)
+        .unwrap_or_else(|| panic!("login failed: status {}", resp.status()))
+}
