@@ -174,7 +174,26 @@ async fn resolve_forwarded_user(
         return None;
     }
     if user.role != role {
+        let from = user.role;
         let _ = users::set_role(&state.pool, &user.id, role).await;
+        // SSO-driven role sync without an audit trail leaves no
+        // record of an upstream IdP demoting / promoting a user;
+        // a compromised proxy could otherwise flip privileges
+        // silently. log() (not log_in_tx) is fine here — set_role
+        // already committed and we don't want to fail the request
+        // if the audit insert errors.
+        let _ = crate::audit::log(
+            &state.pool,
+            &user.username,
+            "user.sso_role_sync",
+            Some(&user.id),
+            &format!(
+                "Role changed from {} to {} via X-Forwarded-Groups",
+                from.as_str(),
+                role.as_str()
+            ),
+        )
+        .await;
     }
     Some(AuthIdentity {
         user_id: user.id,
