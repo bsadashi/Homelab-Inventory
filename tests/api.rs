@@ -321,6 +321,14 @@ async fn security_headers_are_present() {
     assert_eq!(headers["referrer-policy"], "no-referrer");
     assert!(headers.contains_key("permissions-policy"));
     assert!(headers.contains_key("strict-transport-security"));
+    let csp = headers
+        .get("content-security-policy")
+        .expect("content-security-policy header present")
+        .to_str()
+        .unwrap();
+    assert!(csp.contains("default-src 'self'"), "CSP: {csp}");
+    assert!(csp.contains("frame-ancestors 'none'"), "CSP: {csp}");
+    assert!(csp.contains("object-src 'none'"), "CSP: {csp}");
 }
 
 // ---- bearer auth -------------------------------------------------------
