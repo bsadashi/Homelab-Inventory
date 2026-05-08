@@ -84,6 +84,14 @@ async fn signup(
     Json(input): Json<CredentialsInput>,
 ) -> ApiResult<(StatusCode, HeaderMap, Json<AuthResponse>)> {
     let username = validate_username(&input.username)?.to_string();
+    // Apply the same per-username throttle as login. Without this an
+    // attacker with RACKLOG_OPEN_SIGNUP=1 could enumerate the user
+    // table or spam account creation at line speed.
+    if !throttle::allow_attempt(&username) {
+        return Err(ApiError::TooManyRequests(
+            "too many signup attempts; try again shortly".into(),
+        ));
+    }
     let count = users::count(&state.pool).await?;
 
     // First user always becomes admin (bootstrap). Subsequent
@@ -106,6 +114,10 @@ async fn signup(
         }
         Err(e) => return Err(ApiError::Database(e)),
     };
+    // Refill the throttle bucket so a freshly-created user's first
+    // login (which signup also performs implicitly via the cookie
+    // it sets) doesn't count against subsequent attempts.
+    throttle::note_success(&username);
     let _ = users::touch_last_login(&state.pool, &user.id).await;
 
     let session = sessions::create(&state.pool, &user.id, sessions::DEFAULT_TTL_HOURS)
