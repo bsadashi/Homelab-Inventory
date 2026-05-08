@@ -49,7 +49,12 @@ struct InfoResponse {
     version: &'static str,
     uptime_seconds: u64,
     database_url_kind: &'static str,
-    database_path: Option<String>,
+    /// True when the database is a local file (sqlite). Replaces the
+    /// previous `database_path` field — even though /info is now
+    /// admin-only, leaking an absolute filesystem path through the
+    /// API surface is needless. Operators can read the path from
+    /// the deployment config.
+    database_is_local: bool,
     pool_size: u32,
     pool_idle: usize,
     audit_head: Option<String>,
@@ -63,12 +68,11 @@ async fn info(
     RequireAdmin(_): RequireAdmin,
 ) -> ApiResult<Json<InfoResponse>> {
     let chain = audit::verify_chain(&state.pool).await?;
-    let database_path = sqlite_path(&state.cfg.database_url);
     Ok(Json(InfoResponse {
         version: env!("CARGO_PKG_VERSION"),
         uptime_seconds: started_at().elapsed().as_secs(),
         database_url_kind: "sqlite",
-        database_path,
+        database_is_local: sqlite_path(&state.cfg.database_url).is_some(),
         pool_size: state.pool.size(),
         pool_idle: state.pool.num_idle(),
         audit_head: chain.head.clone(),

@@ -107,8 +107,7 @@ pub fn verify_dummy(password: &str) {
         // call hash() rather than embedding a literal PHC string so
         // the cost parameters always track what argon2_engine()
         // produces.
-        hash("__racklog_dummy_password__")
-            .expect("dummy hash must hash cleanly")
+        hash("__racklog_dummy_password__").expect("dummy hash must hash cleanly")
     });
     let _ = verify(password, h);
 }

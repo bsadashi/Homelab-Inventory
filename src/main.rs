@@ -57,6 +57,23 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(cfg.bind).await?;
     tracing::info!(addr = %cfg.bind, "listening");
 
+    // L3 (pen-test): the forwarded-header trust path is binary —
+    // when on, *any* peer that can reach the bind socket can claim
+    // an admin identity via X-Forwarded-User / X-Forwarded-Groups.
+    // The intended deployment is "behind a trusted reverse proxy
+    // that strips these headers from upstream requests"; warn at
+    // startup if both trust=on and we're listening on a non-loopback
+    // address, so the operator gets one chance to spot a misconfig.
+    if cfg.trust_forwarded_headers && !cfg.bind.ip().is_loopback() {
+        tracing::warn!(
+            bind = %cfg.bind,
+            "RACKLOG_TRUST_FORWARDED_HEADERS=1 with a non-loopback bind. \
+             Ensure ONLY a trusted reverse proxy (Authelia / oauth2-proxy / \
+             Authentik / Caddy / nginx) can reach this socket — anyone else \
+             can spoof X-Forwarded-User / X-Forwarded-Groups.",
+        );
+    }
+
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;

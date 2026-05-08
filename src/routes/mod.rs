@@ -80,10 +80,11 @@ pub fn build(state: AppState) -> Router {
 /// Conservative default Content-Security-Policy. Locks third-party
 /// origins to the unpkg CDN we already pin React/Babel/Three from
 /// (with SRI), forbids object/embed entirely, and blocks framing
-/// + base-uri overrides. `unsafe-eval` is needed by the in-browser
-/// Babel transform; `unsafe-inline` is needed by the bootstrap-JSON
-/// `<script>` tag the server injects on `/`. Both can be dropped
-/// once the dashboard ships a precompiled bundle.
+/// plus base-uri overrides. The two unsafe directives are needed
+/// because the in-browser Babel transform calls eval, and the
+/// bootstrap-JSON snippet runs from an inline script tag the
+/// server injects on `/`. Both can drop once the dashboard ships
+/// a precompiled bundle.
 const CSP: &str = concat!(
     "default-src 'self'; ",
     "script-src 'self' https://unpkg.com 'unsafe-inline' 'unsafe-eval'; ",
