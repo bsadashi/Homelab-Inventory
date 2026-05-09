@@ -1,0 +1,25 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Local data
+*.db
+*.db-shm
+*.db-wal
+/data/
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Containers
+.docker/
+
+# sqlx offline cache (we use runtime queries)
+.sqlx/

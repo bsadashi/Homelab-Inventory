@@ -1,0 +1,41 @@
+services:
+  racklog:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: racklog:dev
+    container_name: racklog
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      RACKLOG_BIND: 0.0.0.0:8080
+      RACKLOG_DATA_DIR: /data
+      RACKLOG_LOG_FORMAT: json
+      # Uncomment to require a bearer token for /api requests.
+      # RACKLOG_AUTH_TOKEN: change-me-in-prod
+      # Uncomment to widen CORS for a separately-hosted frontend.
+      # RACKLOG_ALLOW_ORIGIN: https://dashboard.example.com
+    volumes:
+      - racklog-data:/data
+    healthcheck:
+      # Distroless runtime has no shell — the binary self-checks via
+      # `racklog healthcheck`, which hits /api/healthz on the local
+      # bind and exits 0/1. Same probe shape Kubernetes uses via
+      # httpGet, just without depending on a shell or curl.
+      test: ["CMD", "/usr/local/bin/racklog", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  racklog-data:
+    driver: local

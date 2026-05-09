@@ -1,0 +1,98 @@
+# Continuous integration. Runs on every push and PR.
+#
+# Three independent jobs so a single failure (e.g. a cargo fmt nit)
+# doesn't hide a real test regression.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --locked -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --tests
+      - run: cargo test --locked
+
+  # Build the release binary so we catch stripping / link issues that
+  # only show up under --release. Quick: ~30 s with the cache warm.
+  build-release:
+    name: build (release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked --bin racklog
+
+  # Supply-chain checks. Configured in deny.toml.
+  #   * `licenses`   — fails on any dep with a license outside the
+  #                    allow-list (catches GPL/AGPL drift early).
+  #   * `advisories` — RustSec vulnerability database; warns on
+  #                    yanked versions.
+  #   * `bans`       — wildcards = deny; duplicate versions = warn.
+  #   * `sources`    — only crates.io.
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses advisories bans sources
+
+  # OS-layer supply-chain check. cargo-deny covers the Rust crate graph;
+  # this scans the built container image (base layer + libc + libssl +
+  # ca-certificates etc.) for known CVEs. Fails on HIGH/CRITICAL only —
+  # MEDIUM and below are noted in the SARIF artifact but don't block.
+  trivy:
+    name: trivy (image scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (no push)
+        run: docker build -t racklog:ci .
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: racklog:ci
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          ignore-unfixed: true

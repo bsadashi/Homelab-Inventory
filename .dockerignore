@@ -1,0 +1,12 @@
+target/
+.git/
+.github/
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+deploy/
+README.md
+LICENSE

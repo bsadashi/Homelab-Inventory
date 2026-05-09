@@ -1,0 +1,120 @@
+[package]
+name = "racklog"
+version = "0.1.0"
+edition = "2021"
+authors = ["RACKLOG Contributors"]
+description = "RACKLOG · privacy-focused homelab inventory backend"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "racklog"
+path = "src/main.rs"
+
+[[bin]]
+name = "racklog-mcp"
+path = "src/bin/mcp.rs"
+
+[lib]
+name = "racklog"
+path = "src/lib.rs"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros", "tokio", "http2"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = [
+    "fs", "cors", "trace", "compression-gzip", "set-header",
+    "request-id", "timeout", "limit", "sensitive-headers"
+] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Database. SQLite-only by design today — see `docs/postgres.md` for what
+# adopting Postgres would actually entail (it's not just a feature flag).
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "json"
+] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Time
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+
+# Crypto / hashing for the audit chain + /api/events HMAC.
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+subtle = "2"
+
+# CIDR parsing for the trusted-proxy allowlist on the SSO header path.
+ipnet = "2"
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Config
+dotenvy = "0.15"
+
+# Static asset embedding for the dashboard UI
+mime_guess = "2"
+
+# Outbound HTTP client for SKU sync providers (DigiKey, UPCitemDB, …).
+# rustls-tls keeps the runtime image free of OpenSSL system deps.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
+
+# URL-encode tool arguments in the MCP server.
+urlencoding = "2"
+
+# Authentication / authorization
+argon2 = "0.5"
+password-hash = "0.5"
+rand_core = { version = "0.6", features = ["std"] }
+rand = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = 1
+
+# Project-wide lints. CI fails on any warning so drift is impossible
+# to introduce silently; for one-off escape hatches use a localised
+# `#[allow(...)]` with a comment explaining why.
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "warn"
+unreachable_pub = "warn"
+elided_lifetimes_in_paths = "warn"
+
+[lints.clippy]
+# Defaults plus the categories that catch the most maintenance bugs
+# in our experience. Pedantic + nursery left off intentionally — too
+# noisy for a working codebase.
+all = { level = "warn", priority = -1 }
+# sqlx::query_as tuple types blow past the default 250-token complexity
+# limit. We could factor them out but it just renames the noise.
+type_complexity = "allow"
+

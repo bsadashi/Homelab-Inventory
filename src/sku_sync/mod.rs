@@ -1,0 +1,243 @@
+//! External SKU lookup. Provides a normalised `LookupResult` over a
+//! handful of free product-data providers. Providers are configured
+//! via env vars and only enabled when their credentials are present —
+//! a vanilla deployment runs with zero external calls.
+//!
+//! Privacy note: nothing in this module fires unless the operator
+//! explicitly sets a provider's env vars. The frontend's `Lookup`
+//! button is the only path that calls into here, and the request body
+//! contains only the user-provided barcode/SKU. We do not forward
+//! cookies, tokens, or any other identity material.
+
+pub mod digikey;
+pub mod upcitemdb;
+
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+/// Newtype wrapper that prevents accidental disclosure of a secret
+/// (DigiKey client_secret, OAuth access tokens, …) via Debug or
+/// Display. Wrap any string field that should never appear in logs,
+/// panic backtraces, or error rendering. The secret is still usable
+/// — `expose()` returns `&str` for the call sites that genuinely
+/// need it.
+#[derive(Clone)]
+pub struct Redacted(String);
+
+impl Redacted {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Print just enough to be diagnostically useful (length)
+        // without leaking any prefix that could narrow a brute force.
+        write!(f, "Redacted(<{} bytes>)", self.0.len())
+    }
+}
+
+impl std::fmt::Display for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
+/// Normalised lookup result. Providers populate what they can; missing
+/// fields stay None so the frontend can decide what to surface.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LookupResult {
+    pub source: &'static str,
+    pub barcode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mpn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+}
+
+impl LookupResult {
+    pub fn new(source: &'static str, barcode: impl Into<String>) -> Self {
+        Self {
+            source,
+            barcode: barcode.into(),
+            mpn: None,
+            name: None,
+            brand: None,
+            category: None,
+            description: None,
+            image_url: None,
+            product_url: None,
+            price: None,
+            currency: None,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LookupError {
+    #[error("no provider configured")]
+    NoProvider,
+    #[error("invalid barcode")]
+    InvalidBarcode,
+    #[error("provider error: {0}")]
+    Provider(String),
+    #[error(transparent)]
+    Network(#[from] reqwest::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+}
+
+/// Provider trait. Implementations are stateless except for cached
+/// auth tokens, which they manage internally.
+#[async_trait::async_trait]
+pub trait Provider: Send + Sync {
+    fn name(&self) -> &'static str;
+    async fn lookup(&self, barcode: &str) -> Result<Vec<LookupResult>, LookupError>;
+}
+
+/// Builds the active provider chain from env vars. Order matters:
+/// the first provider with results wins so we can put the cheapest /
+/// fastest source first and only fall back when it has nothing.
+pub fn providers_from_env() -> Vec<Box<dyn Provider>> {
+    let mut out: Vec<Box<dyn Provider>> = Vec::new();
+
+    // UPCitemDB — free trial endpoint, 100 req/day, no auth. Always on
+    // unless explicitly disabled, because it costs the operator nothing.
+    if std::env::var("RACKLOG_UPCITEMDB_DISABLED").ok().as_deref() != Some("1") {
+        out.push(Box::new(upcitemdb::UpcItemDb::new()));
+    }
+
+    // DigiKey — opt-in via client credentials.
+    if let (Ok(id), Ok(secret)) = (
+        std::env::var("DIGIKEY_CLIENT_ID"),
+        std::env::var("DIGIKEY_CLIENT_SECRET"),
+    ) {
+        let site = std::env::var("DIGIKEY_LOCALE_SITE").unwrap_or_else(|_| "US".to_string());
+        let language =
+            std::env::var("DIGIKEY_LOCALE_LANGUAGE").unwrap_or_else(|_| "en".to_string());
+        let currency =
+            std::env::var("DIGIKEY_LOCALE_CURRENCY").unwrap_or_else(|_| "USD".to_string());
+        out.push(Box::new(digikey::DigiKey::new(
+            id, secret, site, language, currency,
+        )));
+    }
+
+    out
+}
+
+/// Run every configured provider sequentially until one returns hits.
+/// Stops on first non-empty result so we don't spam multiple APIs for
+/// the common case where the cheapest provider has the answer.
+pub async fn lookup_chain(
+    providers: &[Box<dyn Provider>],
+    barcode: &str,
+) -> Result<Vec<LookupResult>, LookupError> {
+    if providers.is_empty() {
+        return Err(LookupError::NoProvider);
+    }
+    let mut last_err = None;
+    for p in providers {
+        match p.lookup(barcode).await {
+            Ok(hits) if !hits.is_empty() => return Ok(hits),
+            Ok(_) => continue,
+            Err(e) => {
+                tracing::warn!(provider = p.name(), %e, "provider failed");
+                last_err = Some(e);
+            }
+        }
+    }
+    if let Some(e) = last_err {
+        return Err(e);
+    }
+    Ok(Vec::new())
+}
+
+/// Process-wide HTTP client. The original implementation rebuilt a
+/// fresh `reqwest::Client` on every call, silently negating the
+/// connection pool, the cached DigiKey OAuth token's value, and any
+/// reuse benefit at all. We now cache the client in a `OnceLock` so
+/// every provider call reuses the same TCP / TLS state, and surface
+/// builder failure as a `LookupError::Provider` instead of panicking
+/// inside a request handler.
+fn http() -> Result<&'static reqwest::Client, LookupError> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(c) = CLIENT.get() {
+        return Ok(c);
+    }
+    let new = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent(concat!("racklog/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| LookupError::Provider(format!("http client init failed: {e}")))?;
+    // get_or_init wins on race; the loser's freshly-built client is
+    // dropped harmlessly. Both paths return the surviving instance.
+    Ok(CLIENT.get_or_init(|| new))
+}
+
+/// Reject obvious junk before we make any network call, and return
+/// the canonical (whitespace-stripped) form so subsequent lookups
+/// (URL building, SQL bind) all work with the same string. The
+/// previous formulation validated the trimmed value but the caller
+/// then used the raw input — so a barcode like `"  123  "` passed
+/// validation while the local SQL `WHERE barcode = ?` still missed
+/// because it was bound with the surrounding whitespace.
+pub fn validate_barcode(s: &str) -> Result<&str, LookupError> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() || trimmed.len() > 32 {
+        return Err(LookupError::InvalidBarcode);
+    }
+    // Allow A-Z, 0-9, '-' (DigiKey part numbers), '_' (rare).
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(LookupError::InvalidBarcode);
+    }
+    Ok(trimmed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_barcode;
+
+    #[test]
+    fn returns_trimmed_form() {
+        assert_eq!(validate_barcode("  123  ").unwrap(), "123");
+    }
+    #[test]
+    fn empty_after_trim_rejected() {
+        assert!(validate_barcode("    ").is_err());
+    }
+    #[test]
+    fn too_long_rejected() {
+        assert!(validate_barcode(&"a".repeat(33)).is_err());
+    }
+    #[test]
+    fn special_chars_rejected() {
+        assert!(validate_barcode("abc/def").is_err());
+        assert!(validate_barcode("abc def").is_err());
+        assert!(validate_barcode("abc\u{0000}").is_err());
+    }
+    #[test]
+    fn allowed_alphabet() {
+        assert!(validate_barcode("ABC-123_xyz").is_ok());
+    }
+}

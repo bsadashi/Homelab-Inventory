@@ -1,0 +1,70 @@
+// Icons — outline, 14px, 1.5 stroke. Inline SVG so they take currentColor.
+const I = {};
+const mk = (path, vb='0 0 16 16') => ({size=14, ...p}) => (
+  <svg width={size} height={size} viewBox={vb} fill="none" stroke="currentColor"
+       strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}>{path}</svg>
+);
+
+I.dashboard = mk(<><rect x="2" y="2" width="5" height="6"/><rect x="9" y="2" width="5" height="9"/><rect x="2" y="10" width="5" height="4"/><rect x="9" y="13" width="5" height="1"/></>);
+I.box = mk(<><path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M2 5l6 3 6-3M8 8v6"/></>);
+I.tag = mk(<><path d="M8.5 2H3a1 1 0 0 0-1 1v5.5l6 6 7-7z"/><circle cx="5.5" cy="5.5" r="1"/></>);
+I.scan = mk(<><path d="M2 5V3a1 1 0 0 1 1-1h2M14 5V3a1 1 0 0 0-1-1h-2M2 11v2a1 1 0 0 0 1 1h2M14 11v2a1 1 0 0 1-1 1h-2"/><path d="M2 8h12"/></>);
+I.qr = mk(<><rect x="2" y="2" width="5" height="5"/><rect x="9" y="2" width="5" height="5"/><rect x="2" y="9" width="5" height="5"/><path d="M9 9h2v2H9zM12 9v3M9 12h2M12 14h2"/></>);
+I.layers = mk(<><path d="M8 1L1 5l7 4 7-4z"/><path d="M1 8l7 4 7-4M1 11l7 4 7-4"/></>);
+I.cart = mk(<><path d="M1 1h2l2 9h8l2-6H4"/><circle cx="6" cy="13" r="1"/><circle cx="12" cy="13" r="1"/></>);
+I.truck = mk(<><path d="M1 4h9v7H1zM10 7h3l2 2v2h-5z"/><circle cx="4" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/></>);
+I.swap = mk(<><path d="M3 5h10l-3-3M13 11H3l3 3"/></>);
+I.users = mk(<><circle cx="6" cy="6" r="2.5"/><circle cx="11.5" cy="7" r="1.8"/><path d="M2 13c0-2 2-3 4-3s4 1 4 3M10 13c0-1.5 1.5-2.5 3-2.5"/></>);
+I.list = mk(<><circle cx="3" cy="4" r=".5"/><circle cx="3" cy="8" r=".5"/><circle cx="3" cy="12" r=".5"/><path d="M6 4h8M6 8h8M6 12h8"/></>);
+I.chart = mk(<><path d="M2 14V2M2 14h12"/><path d="M5 11l3-3 2 2 3-4"/></>);
+I.alert = mk(<><path d="M8 1l7 13H1z"/><path d="M8 6v3M8 11v.5"/></>);
+I.check = mk(<path d="M3 8l3 3 7-7"/>);
+I.x = mk(<path d="M3 3l10 10M13 3L3 13"/>);
+I.plus = mk(<path d="M8 3v10M3 8h10"/>);
+I.minus = mk(<path d="M3 8h10"/>);
+I.search = mk(<><circle cx="7" cy="7" r="4.5"/><path d="M11 11l3 3"/></>);
+I.filter = mk(<><path d="M2 3h12l-4.5 6v4l-3 1.5V9z"/></>);
+I.settings = mk(<><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M1 8h2M13 8h2M3.6 12.4L5 11M11 5l1.4-1.4"/></>);
+I.bell = mk(<><path d="M4 11V7a4 4 0 0 1 8 0v4l1 2H3z"/><path d="M7 14a1 1 0 0 0 2 0"/></>);
+I.user = mk(<><circle cx="8" cy="6" r="3"/><path d="M2 14c1-3 3.5-4 6-4s5 1 6 4"/></>);
+I.location = mk(<><path d="M8 15s5-5 5-9a5 5 0 0 0-10 0c0 4 5 9 5 9z"/><circle cx="8" cy="6" r="2"/></>);
+I.dot = mk(<circle cx="8" cy="8" r="2" fill="currentColor"/>);
+I.chevR = mk(<path d="M6 3l5 5-5 5"/>);
+I.chevD = mk(<path d="M3 6l5 5 5-5"/>);
+I.chevU = mk(<path d="M3 10l5-5 5 5"/>);
+I.chevL = mk(<path d="M10 3L5 8l5 5"/>);
+I.arrowUp = mk(<><path d="M8 13V3M4 7l4-4 4 4"/></>);
+I.arrowDown = mk(<><path d="M8 3v10M4 9l4 4 4-4"/></>);
+I.dotsV = mk(<><circle cx="8" cy="3" r=".8" fill="currentColor"/><circle cx="8" cy="8" r=".8" fill="currentColor"/><circle cx="8" cy="13" r=".8" fill="currentColor"/></>);
+I.dotsH = mk(<><circle cx="3" cy="8" r=".8" fill="currentColor"/><circle cx="8" cy="8" r=".8" fill="currentColor"/><circle cx="13" cy="8" r=".8" fill="currentColor"/></>);
+I.refresh = mk(<><path d="M14 2v4h-4M2 14v-4h4"/><path d="M3 7a5.5 5.5 0 0 1 9-1.5L14 6M13 9a5.5 5.5 0 0 1-9 1.5L2 10"/></>);
+I.print = mk(<><path d="M4 2h8v4H4zM3 6h10v6h-2v2H5v-2H3z"/><circle cx="11.5" cy="8.5" r=".5"/></>);
+I.download = mk(<><path d="M8 2v9M4 7l4 4 4-4M2 14h12"/></>);
+I.upload = mk(<><path d="M8 11V2M4 6l4-4 4 4M2 14h12"/></>);
+I.history = mk(<><circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/></>);
+I.barcode = mk(<><path d="M2 3v10M4 3v10M5 3v10M7 3v10M9 3v10M10 3v10M12 3v10M14 3v10"/></>);
+I.warehouse = mk(<><path d="M1 6L8 2l7 4v8H1z"/><rect x="6" y="9" width="4" height="5"/></>);
+I.book = mk(<><path d="M2 3v11l6-2 6 2V3l-6 2z"/><path d="M8 5v9"/></>);
+I.calendar = mk(<><rect x="2" y="3" width="12" height="11"/><path d="M2 6h12M5 1v3M11 1v3"/></>);
+I.dollar = mk(<><path d="M8 1v14"/><path d="M11 4h-4a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4H6"/></>);
+I.flame = mk(<><path d="M8 1c1 3 4 4 4 8a4 4 0 0 1-8 0c0-2 1-3 1-3 0 1 1 2 2 2-1-3 0-5 1-7z"/></>);
+I.expand = mk(<><path d="M9 2h5v5M14 2L9 7M7 14H2V9M2 14l5-5"/></>);
+I.collapse = mk(<><path d="M14 7H9V2M9 7l5-5M2 9h5v5M7 9l-5 5"/></>);
+I.eye = mk(<><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/></>);
+I.copy = mk(<><rect x="5" y="5" width="9" height="9"/><path d="M5 11H2V2h9v3"/></>);
+I.edit = mk(<><path d="M11 2l3 3-9 9H2v-3z"/></>);
+I.trash = mk(<><path d="M2 4h12M5 4V2h6v2M4 4l1 10h6l1-10"/></>);
+I.flag = mk(<><path d="M3 14V2"/><path d="M3 3h9l-2 3 2 3H3"/></>);
+I.tools = mk(<><path d="M11 1a3 3 0 0 0-2 5L2 13l1 1 7-7a3 3 0 0 0 5-2l-2 2-2-1-1-2z"/></>);
+I.cpu = mk(<><rect x="4" y="4" width="8" height="8"/><rect x="6" y="6" width="4" height="4"/><path d="M6 1v3M10 1v3M6 12v3M10 12v3M1 6h3M1 10h3M12 6h3M12 10h3"/></>);
+I.disk = mk(<><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2"/></>);
+I.wifi = mk(<><path d="M1 5a11 11 0 0 1 14 0M3 8a7 7 0 0 1 10 0M5 11a4 4 0 0 1 6 0"/><circle cx="8" cy="13" r=".5" fill="currentColor"/></>);
+I.battery = mk(<><rect x="1" y="5" width="12" height="6"/><path d="M14 7v2"/><path d="M3 7h6v2H3z" fill="currentColor"/></>);
+I.lightning = mk(<path d="M9 1L3 9h4l-1 6 6-8H8z"/>);
+I.terminal = mk(<><rect x="1" y="3" width="14" height="10"/><path d="M4 6l2 2-2 2M8 10h4"/></>);
+I.shield = mk(<><path d="M8 1l6 2v5c0 4-3 6-6 7-3-1-6-3-6-7V3z"/></>);
+I.git = mk(<><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="8" r="1.5"/><path d="M4 5.5v5M5.5 12c5 0 5-4 5-4"/></>);
+I.sun = mk(<><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M3.5 12.5L5 11M11 5l1.5-1.5"/></>);
+I.moon = mk(<path d="M13 9A5 5 0 1 1 7 3a4 4 0 0 0 6 6z"/>);
+
+window.I = I;

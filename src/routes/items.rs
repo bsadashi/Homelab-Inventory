@@ -1,0 +1,517 @@
+//! /api/items — catalog with per-bin stock, variants, lots and serials.
+//!
+//! Items are denormalised at write-time: variants/lots/tags/serials live
+//! inside JSON-typed columns to keep reads cheap and the wire format
+//! identical to the prototype's data shape.
+
+use crate::audit::log_in_tx;
+use crate::auth::RequireOperator;
+use crate::db::RowExt;
+use crate::error::{ApiError, ApiResult};
+use crate::models::{Item, ItemInput, StockLine};
+use crate::state::AppState;
+use axum::extract::{Path, Query, State};
+
+/// Column list for `SELECT … FROM items`. Listed in one place so
+/// `list`, `get_one`, and the bootstrap snapshot stay in lockstep
+/// when the schema changes.
+pub(crate) const ITEM_COLUMNS: &str = "id, sku, name, category, brand, supplier_id, cost, \
+                                       price, unit, min_qty, max_qty, qty, allocated, \
+                                       barcode, variants, lots, tags, img, updated";
+use axum::http::StatusCode;
+use axum::routing::{get, put};
+use axum::{Json, Router};
+use serde::Deserialize;
+use sqlx::Row;
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/", get(list).post(create))
+        .route("/:id", put(update).delete(delete).get(get_one))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListFilter {
+    pub category: Option<String>,
+    pub supplier: Option<String>,
+    pub barcode: Option<String>,
+    pub q: Option<String>,
+    /// Optional pagination — defaults are generous since the typical
+    /// homelab catalog is well under the cap.
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+async fn list(
+    State(state): State<AppState>,
+    Query(filter): Query<ListFilter>,
+) -> ApiResult<Json<Vec<Item>>> {
+    let (limit, offset) = crate::routes::pagination::PageQuery {
+        limit: filter.limit,
+        offset: filter.offset,
+    }
+    .resolve();
+
+    let mut sql = format!("SELECT {ITEM_COLUMNS} FROM items WHERE 1=1");
+    if filter.category.is_some() {
+        sql.push_str(" AND category = ?");
+    }
+    if filter.supplier.is_some() {
+        sql.push_str(" AND supplier_id = ?");
+    }
+    if filter.barcode.is_some() {
+        sql.push_str(" AND barcode = ?");
+    }
+    // ESCAPE clause lets the user search for literal `%` and `_`
+    // without those characters acting as wildcards.
+    if filter.q.is_some() {
+        sql.push_str(" AND (sku LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')");
+    }
+    sql.push_str(" ORDER BY sku LIMIT ? OFFSET ?");
+
+    let mut q = sqlx::query(&sql);
+    if let Some(v) = &filter.category {
+        q = q.bind(v);
+    }
+    if let Some(v) = &filter.supplier {
+        q = q.bind(v);
+    }
+    if let Some(v) = &filter.barcode {
+        q = q.bind(v);
+    }
+    if let Some(v) = &filter.q {
+        let pat = format!("%{}%", escape_like(v));
+        q = q.bind(pat.clone()).bind(pat);
+    }
+    q = q.bind(limit).bind(offset);
+    let rows = q.fetch_all(&state.pool).await?;
+
+    let mut items: Vec<Item> = rows.into_iter().map(row_to_item).collect();
+    let stock = load_all_stock(&state.pool, items.iter().map(|i| i.id.as_str())).await?;
+    for it in items.iter_mut() {
+        it.loc = stock.get(&it.id).cloned().unwrap_or_default();
+    }
+    Ok(Json(items))
+}
+
+async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Item>> {
+    let row = sqlx::query(&format!("SELECT {ITEM_COLUMNS} FROM items WHERE id = ?"))
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let mut item = row_to_item(row);
+    item.loc = load_stock_for(&state.pool, &id).await?;
+    Ok(Json(item))
+}
+
+async fn create(
+    State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
+    Json(input): Json<ItemInput>,
+) -> ApiResult<(StatusCode, Json<Item>)> {
+    validate(&input)?;
+    // Full UUID (32 hex chars) instead of an 8-char truncation —
+    // 32-bit truncation gave only ~64 K headroom before birthday
+    // collisions; the full v4 UUID has 122 bits of entropy.
+    let id = input
+        .id
+        .clone()
+        .unwrap_or_else(|| format!("I-{}", uuid::Uuid::new_v4().simple()));
+
+    let mut tx = state.pool.begin().await?;
+    insert_item(&mut tx, &id, &input).await?;
+    write_stock(&mut tx, &id, &input.loc).await?;
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "item.create",
+        Some(&id),
+        &format!("Created item {} ({})", input.name, input.sku),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let mut item = input_to_item(&id, &input);
+    item.loc = input.loc;
+    Ok((StatusCode::CREATED, Json(item)))
+}
+
+async fn update(
+    State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
+    Path(id): Path<String>,
+    Json(input): Json<ItemInput>,
+) -> ApiResult<Json<Item>> {
+    validate(&input)?;
+    let mut tx = state.pool.begin().await?;
+
+    let res = sqlx::query(
+        r#"UPDATE items SET sku = ?, name = ?, category = ?, brand = ?, supplier_id = ?,
+                cost = ?, price = ?, unit = ?, min_qty = ?, max_qty = ?, qty = ?,
+                allocated = ?, barcode = ?, variants = ?, lots = ?, tags = ?,
+                img = ?, updated = ?, updated_at = datetime('now')
+           WHERE id = ?"#,
+    )
+    .bind(&input.sku)
+    .bind(&input.name)
+    .bind(&input.category)
+    .bind(&input.brand)
+    .bind(&input.supplier)
+    .bind(input.cost)
+    .bind(input.price)
+    .bind(&input.unit)
+    .bind(input.min)
+    .bind(input.max)
+    .bind(input.qty)
+    .bind(input.allocated)
+    .bind(&input.barcode)
+    .bind(
+        input
+            .variants
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
+    .bind(
+        input
+            .lots
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
+    .bind(serde_json::to_string(&input.tags).unwrap_or_else(|_| "[]".into()))
+    .bind(&input.img)
+    .bind(chrono::Utc::now().date_naive().to_string())
+    .bind(&id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_unique)?;
+    if res.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
+
+    sqlx::query("DELETE FROM item_stock WHERE item_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    write_stock(&mut tx, &id, &input.loc).await?;
+
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "item.update",
+        Some(&id),
+        &format!("Updated item {}", input.sku),
+    )
+    .await?;
+    tx.commit().await?;
+    get_one(State(state), Path(id)).await
+}
+
+async fn delete(
+    State(state): State<AppState>,
+    RequireOperator(auth): RequireOperator,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    let mut tx = state.pool.begin().await?;
+    let res = sqlx::query("DELETE FROM items WHERE id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
+    log_in_tx(
+        &mut tx,
+        &auth.username,
+        "item.delete",
+        Some(&id),
+        &format!("Deleted item {}", id),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- helpers ------------------------------------------------------------
+
+fn validate(input: &ItemInput) -> ApiResult<()> {
+    if input.sku.trim().is_empty() || input.name.trim().is_empty() {
+        return Err(ApiError::BadRequest("sku and name are required".into()));
+    }
+    if input.qty < 0 || input.allocated < 0 {
+        return Err(ApiError::BadRequest("qty and allocated must be ≥ 0".into()));
+    }
+    // Reject NaN / ±Infinity / absurd magnitudes on monetary fields.
+    // SQLite stores them as REAL and serde happily round-trips NaN
+    // through JSON, which then breaks the dashboard's totals. The
+    // upper bound is generous (a $1B item is fine) but bounded so a
+    // single typo can't poison aggregate KPIs.
+    const MONEY_MAX: f64 = 1.0e9;
+    for (label, v) in [("cost", input.cost), ("price", input.price)] {
+        if !v.is_finite() || !(0.0..=MONEY_MAX).contains(&v) {
+            return Err(ApiError::BadRequest(format!(
+                "{label} must be a finite number in [0, {MONEY_MAX}]"
+            )));
+        }
+    }
+    Ok(())
+}
+
+async fn insert_item<'a>(
+    tx: &mut sqlx::Transaction<'a, sqlx::Sqlite>,
+    id: &str,
+    input: &ItemInput,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"INSERT INTO items
+           (id, sku, name, category, brand, supplier_id, cost, price, unit,
+            min_qty, max_qty, qty, allocated, barcode, variants, lots, tags, img, updated)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+    )
+    .bind(id)
+    .bind(&input.sku)
+    .bind(&input.name)
+    .bind(&input.category)
+    .bind(&input.brand)
+    .bind(&input.supplier)
+    .bind(input.cost)
+    .bind(input.price)
+    .bind(&input.unit)
+    .bind(input.min)
+    .bind(input.max)
+    .bind(input.qty)
+    .bind(input.allocated)
+    .bind(&input.barcode)
+    .bind(
+        input
+            .variants
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
+    .bind(
+        input
+            .lots
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default()),
+    )
+    .bind(serde_json::to_string(&input.tags).unwrap_or_else(|_| "[]".into()))
+    .bind(&input.img)
+    .bind(chrono::Utc::now().date_naive().to_string())
+    .execute(&mut **tx)
+    .await
+    .map_err(map_unique)?;
+    Ok(())
+}
+
+async fn write_stock<'a>(
+    tx: &mut sqlx::Transaction<'a, sqlx::Sqlite>,
+    item_id: &str,
+    lines: &[StockLine],
+) -> ApiResult<()> {
+    for line in lines {
+        let serials = line
+            .serial
+            .as_ref()
+            .map(|s| serde_json::to_string(s).unwrap_or_default());
+        let res = sqlx::query(
+            "INSERT INTO item_stock (item_id, location_id, bin, qty, serials)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(item_id)
+        .bind(&line.l)
+        .bind(&line.b)
+        .bind(line.q)
+        .bind(serials)
+        .execute(&mut **tx)
+        .await;
+        // Two concurrent inserts to the same (item_id, location_id, bin)
+        // would otherwise surface as a generic 500 thanks to the unique
+        // index on item_stock. Map it to a clean 409.
+        if let Err(sqlx::Error::Database(db)) = &res {
+            if db.is_unique_violation() {
+                return Err(ApiError::Conflict(
+                    "another stock line for this bin already exists".into(),
+                ));
+            }
+        }
+        let _ = res?;
+    }
+    Ok(())
+}
+
+async fn load_stock_for(pool: &sqlx::SqlitePool, id: &str) -> ApiResult<Vec<StockLine>> {
+    let rows =
+        sqlx::query("SELECT location_id, bin, qty, serials FROM item_stock WHERE item_id = ?")
+            .bind(id)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StockLine {
+            l: r.get("location_id"),
+            b: r.try_get::<Option<String>, _>("bin")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+            q: r.try_get("qty").unwrap_or(0),
+            serial: r
+                .try_get::<Option<String>, _>("serials")
+                .ok()
+                .flatten()
+                .and_then(|s| serde_json::from_str(&s).ok()),
+        })
+        .collect())
+}
+
+/// Conservative chunk size for SQLite IN-clauses.
+///
+/// SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is 999 (32766 in
+/// newer 3.32+ builds, but we can't assume that). At 500 we have
+/// generous headroom and still keep the per-chunk round trip count
+/// low. List endpoints clamp at 5000 items so worst-case is 10
+/// chunks per call.
+const SQLITE_IN_CHUNK: usize = 500;
+
+async fn load_all_stock<'a>(
+    pool: &sqlx::SqlitePool,
+    ids: impl Iterator<Item = &'a str>,
+) -> ApiResult<std::collections::HashMap<String, Vec<StockLine>>> {
+    let id_list: Vec<String> = ids.map(|s| s.to_string()).collect();
+    if id_list.is_empty() {
+        return Ok(Default::default());
+    }
+    let mut out: std::collections::HashMap<String, Vec<StockLine>> =
+        std::collections::HashMap::new();
+    for chunk in id_list.chunks(SQLITE_IN_CHUNK) {
+        // Build placeholders for an IN clause; SQLite doesn't take
+        // arrays directly. One ? per id, one chunk per round trip.
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT item_id, location_id, bin, qty, serials FROM item_stock WHERE item_id IN ({})",
+            placeholders
+        );
+        let mut q = sqlx::query(&sql);
+        for id in chunk {
+            q = q.bind(id);
+        }
+        let rows = q.fetch_all(pool).await?;
+        for r in rows {
+            let item_id: String = r.get("item_id");
+            out.entry(item_id).or_default().push(StockLine {
+                l: r.get("location_id"),
+                b: r.try_get::<Option<String>, _>("bin")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+                q: r.try_get("qty").unwrap_or(0),
+                serial: r
+                    .try_get::<Option<String>, _>("serials")
+                    .ok()
+                    .flatten()
+                    .and_then(|s| serde_json::from_str(&s).ok()),
+            });
+        }
+    }
+    Ok(out)
+}
+
+pub(crate) fn row_to_item(r: sqlx::sqlite::SqliteRow) -> Item {
+    Item {
+        id: r.string_or_default("id"),
+        sku: r.string_or_default("sku"),
+        name: r.string_or_default("name"),
+        category: r.string_or_default("category"),
+        brand: r.opt_string("brand"),
+        supplier: r.opt_string("supplier_id"),
+        cost: r.f64_or("cost", 0.0),
+        price: r.f64_or("price", 0.0),
+        unit: r.opt_string("unit").unwrap_or_else(|| "ea".into()),
+        min: r.i64_or("min_qty", 0),
+        max: r.i64_or("max_qty", 0),
+        qty: r.i64_or("qty", 0),
+        allocated: r.i64_or("allocated", 0),
+        barcode: r.opt_string("barcode"),
+        loc: Vec::new(),
+        variants: r
+            .opt_string("variants")
+            .and_then(|s| serde_json::from_str(&s).ok()),
+        lots: r
+            .opt_string("lots")
+            .and_then(|s| serde_json::from_str(&s).ok()),
+        tags: serde_json::from_str(&r.string_or_default("tags")).unwrap_or_default(),
+        updated: r.opt_string("updated"),
+        img: r.opt_string("img"),
+    }
+}
+
+fn input_to_item(id: &str, input: &ItemInput) -> Item {
+    Item {
+        id: id.to_string(),
+        sku: input.sku.clone(),
+        name: input.name.clone(),
+        category: input.category.clone(),
+        brand: input.brand.clone(),
+        supplier: input.supplier.clone(),
+        cost: input.cost,
+        price: input.price,
+        unit: input.unit.clone(),
+        min: input.min,
+        max: input.max,
+        qty: input.qty,
+        allocated: input.allocated,
+        barcode: input.barcode.clone(),
+        loc: Vec::new(),
+        variants: input.variants.clone(),
+        lots: input.lots.clone(),
+        tags: input.tags.clone(),
+        updated: Some(chrono::Utc::now().date_naive().to_string()),
+        img: input.img.clone(),
+    }
+}
+
+fn map_unique(e: sqlx::Error) -> ApiError {
+    match e {
+        sqlx::Error::Database(db) if db.is_unique_violation() => {
+            ApiError::Conflict("sku already exists".into())
+        }
+        other => ApiError::Database(other),
+    }
+}
+
+/// Escape SQL LIKE wildcards in a user-supplied search term so a query
+/// for `100%` matches the literal string `100%`, not "anything starting
+/// with 100". Used in conjunction with `ESCAPE '\\'`.
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '%' || c == '_' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_like;
+
+    #[test]
+    fn literal_percent_escaped() {
+        assert_eq!(escape_like("100%"), "100\\%");
+    }
+    #[test]
+    fn literal_underscore_escaped() {
+        assert_eq!(escape_like("a_b"), "a\\_b");
+    }
+    #[test]
+    fn literal_backslash_escaped() {
+        assert_eq!(escape_like("a\\b"), "a\\\\b");
+    }
+    #[test]
+    fn plain_term_passes_through() {
+        assert_eq!(escape_like("widget"), "widget");
+    }
+}
