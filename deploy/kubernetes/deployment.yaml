@@ -32,6 +32,13 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+        # AppArmor RuntimeDefault layers a kernel LSM policy on top of
+        # the seccomp filter. Requires Kubernetes 1.30+; older clusters
+        # can drop this block and use the legacy
+        # `container.apparmor.security.beta.kubernetes.io/<container>`
+        # annotation on the pod template instead.
+        appArmorProfile:
+          type: RuntimeDefault
       containers:
         - name: racklog
           image: ghcr.io/bsadashi/racklog:latest    # replace with your registry path
