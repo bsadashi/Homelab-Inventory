@@ -173,6 +173,16 @@ async fn login(
     // (validated) username so attacker bursts on one account can't
     // be hidden by varying case or whitespace.
     if !throttle::allow_attempt(&username) {
+        // Structured log line so fail2ban / CrowdSec can match
+        // outside the per-username throttle (which is in-process
+        // and per-account; per-IP banning is the complementary
+        // layer). See deploy/HARDENING.md for the parser config.
+        tracing::warn!(
+            event = "auth.failed",
+            username = %username,
+            reason = "throttled",
+            "login throttled"
+        );
         return Err(ApiError::TooManyRequests(
             "too many login attempts; try again shortly".into(),
         ));
@@ -190,11 +200,23 @@ async fn login(
             // any Argon2 work — leaving a 20× timing oracle for
             // username enumeration.
             password::verify_dummy(&input.password);
+            tracing::warn!(
+                event = "auth.failed",
+                username = %username,
+                reason = "no_such_user_or_disabled",
+                "login rejected"
+            );
             return Err(ApiError::Unauthorized);
         }
     };
     let ok = password::verify(&input.password, &hash).unwrap_or(false);
     if !ok {
+        tracing::warn!(
+            event = "auth.failed",
+            username = %username,
+            reason = "wrong_password",
+            "login rejected"
+        );
         return Err(ApiError::Unauthorized);
     }
 

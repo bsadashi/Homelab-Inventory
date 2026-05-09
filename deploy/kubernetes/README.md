@@ -62,3 +62,10 @@ If you set `RACKLOG_TRUST_FORWARDED_HEADERS=1` to honour
 `10.244.0.0/16`). The middleware drops forwarded headers from any
 peer outside the allowlist. Empty list = trust whoever can reach the
 bind socket — fine on a loopback bind, dangerous otherwise.
+
+### Further hardening
+
+[`../HARDENING.md`](../HARDENING.md) covers host-level controls the
+container layer can't enforce on its own — fail2ban / CrowdSec
+recipes for per-IP brute-force banning, image-pinning hygiene, and
+the optional Lynis pass.
