@@ -37,3 +37,28 @@ The shipped manifest pins `replicas: 1` because the SQLite database lives
 on a single PVC. The Rust service is otherwise stateless. Postgres
 support is **not implemented today** — see [`docs/postgres.md`](../../docs/postgres.md)
 for what it would actually take.
+
+## Prerequisites
+
+### Clock sync is mandatory
+
+Every audit-log row records a wall-clock timestamp and the SHA-256 chain
+covers it (canonical-JSON v2). If the host clock jumps backwards or sits
+in the future, the chain still verifies, but the timestamps stop being
+useful for forensics — and `retain_activity` deletes rows by absolute
+timestamp, which silently misbehaves on a drifted clock.
+
+Run `chrony` / `systemd-timesyncd` on every node and confirm with
+`timedatectl`. Containers inherit the host clock; nothing inside the
+RACKLOG image manages NTP. The k8s manifest does not mount
+`/etc/localtime` — keep all timestamps in UTC, which is also what the
+audit canonical-JSON encoding assumes.
+
+### Trusted proxy and SSO
+
+If you set `RACKLOG_TRUST_FORWARDED_HEADERS=1` to honour
+`X-Forwarded-User` from Authelia / oauth2-proxy / Authentik, also set
+`RACKLOG_TRUSTED_PROXY_CIDR` to the proxy's pod or node CIDR (e.g.
+`10.244.0.0/16`). The middleware drops forwarded headers from any
+peer outside the allowlist. Empty list = trust whoever can reach the
+bind socket — fine on a loopback bind, dangerous otherwise.

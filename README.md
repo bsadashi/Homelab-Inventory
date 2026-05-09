@@ -231,7 +231,10 @@ All configuration is sourced from the environment.
   the full SHA-256 chain (canonical-JSON v2 encoding). Pin the
   `head` hash externally to detect rollback. `/api/admin/retain_activity`
   emits an *anchor hash* when pruning so truncations themselves
-  remain provably timestamped.
+  remain provably timestamped. **Run NTP / chrony on the host** —
+  the chain is integrity-only, not a trusted-time service, so a
+  drifted clock leaves your timestamps lying even if the SHA chain
+  still verifies.
 - **Bearer token in localStorage.** When `RACKLOG_AUTH_TOKEN` is
   set, the dashboard stores its token in `localStorage` so it
   survives reloads. This is XSS-readable; for sensitive deployments
