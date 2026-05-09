@@ -76,3 +76,23 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses advisories bans sources
+
+  # OS-layer supply-chain check. cargo-deny covers the Rust crate graph;
+  # this scans the built container image (base layer + libc + libssl +
+  # ca-certificates etc.) for known CVEs. Fails on HIGH/CRITICAL only —
+  # MEDIUM and below are noted in the SARIF artifact but don't block.
+  trivy:
+    name: trivy (image scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (no push)
+        run: docker build -t racklog:ci .
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: racklog:ci
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          ignore-unfixed: true
