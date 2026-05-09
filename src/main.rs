@@ -7,6 +7,14 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Tiny self-check subcommand. Distroless has no shell or curl,
+    // so the docker-compose healthcheck shells out to the binary
+    // itself: `racklog healthcheck`. Hits /api/healthz on the local
+    // bind, exits 0 on 2xx, 1 otherwise.
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        return run_healthcheck().await;
+    }
+
     let cfg = Config::from_env()?;
     logging::init(cfg.log_format);
 
@@ -118,5 +126,43 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => tracing::info!("ctrl-c received, shutting down"),
         _ = terminate => tracing::info!("SIGTERM received, shutting down"),
+    }
+}
+
+/// `racklog healthcheck` — used by the docker-compose `healthcheck`
+/// stanza to probe the running service from inside the container.
+/// Distroless images have no shell or curl, so we can't `wget` like
+/// the previous Debian-slim image did. The binary becomes its own
+/// healthcheck client.
+///
+/// Designed to never panic and never emit a backtrace: a probe
+/// against a temporarily-down server is the *expected* state during
+/// startup, so failure prints one short line on stderr and exits 1.
+async fn run_healthcheck() -> anyhow::Result<()> {
+    let port = std::env::var("RACKLOG_BIND")
+        .ok()
+        .and_then(|b| b.rsplit(':').next().map(str::to_string))
+        .unwrap_or_else(|| "8080".to_string());
+    let url = format!("http://127.0.0.1:{port}/api/healthz");
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("healthcheck: {e}");
+            std::process::exit(1);
+        }
+    };
+    match client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => Ok(()),
+        Ok(resp) => {
+            eprintln!("healthcheck: status {}", resp.status());
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("healthcheck: {e}");
+            std::process::exit(1);
+        }
     }
 }

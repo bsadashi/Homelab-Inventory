@@ -3,13 +3,15 @@
 # Multi-stage build for the RACKLOG Rust service.
 #
 #   stage 1 (planner)  — captures the dependency graph for cache reuse
-#   stage 2 (builder)  — compiles the release binary
-#   stage 3 (runtime)  — minimal Debian slim image with the binary only
+#   stage 2 (builder)  — compiles the release binary + assembles /data
+#   stage 3 (runtime)  — distroless cc-debian12: libc + libssl + ca-certs
+#                        only, no shell, no package manager, no apt.
 #
-# The result is a small, root-less image that contains only the binary
-# and the migrations directory. Frontend assets and the seed dataset are
-# embedded into the binary via include_bytes!/include_str!, so no extra
-# files need to land on the host.
+# The runtime layer carries only the things the Rust binary actually
+# links against (glibc, libgcc, libssl), the trust store, and tzdata.
+# Frontend assets, migrations, and the seed dataset are embedded into
+# the binary via include_bytes!/include_str! so the runtime image needs
+# nothing on the host except a data volume.
 
 ARG RUST_VERSION=1.83
 ARG DEBIAN_VERSION=bookworm
@@ -31,23 +33,35 @@ COPY . .
 RUN cargo build --release --locked
 RUN strip target/release/racklog
 
-# ---------- runtime --------------------------------------------------------
-FROM debian:${DEBIAN_VERSION}-slim AS runtime
+# Pre-create the writable data directory with the right ownership so
+# the distroless stage can COPY it in. Distroless has no `mkdir` or
+# `chown`, so all filesystem layout has to happen in the builder.
+RUN mkdir -p /out/data && chown -R 10001:10001 /out/data
 
-# Run as a dedicated non-root user. Persistent data lives in /data so
-# operators can mount whatever volume / PVC they like.
-RUN groupadd --system --gid 10001 racklog \
- && useradd --system --uid 10001 --gid 10001 --home /home/racklog --create-home racklog \
- && apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
- && rm -rf /var/lib/apt/lists/* \
- && mkdir -p /data \
- && chown -R racklog:racklog /data
+# ---------- runtime --------------------------------------------------------
+# gcr.io/distroless/cc-debian12 is the smallest image that still
+# carries glibc, libgcc, libssl3 and a populated CA store — exactly the
+# set our reqwest+rustls stack needs for outbound TLS to the SKU
+# providers. It has no shell, no package manager, no setuid binaries,
+# and no /etc/passwd writes. Pin by digest at deploy time:
+#
+#   docker pull gcr.io/distroless/cc-debian12:nonroot
+#   docker images --digests gcr.io/distroless/cc-debian12
+#   # then replace the tag below with @sha256:...
+#
+# Trivy in CI catches any known CVEs in the pinned digest.
+FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 
 COPY --from=builder /app/target/release/racklog /usr/local/bin/racklog
+COPY --from=builder --chown=10001:10001 /out/data /data
 
-USER racklog
-WORKDIR /home/racklog
+# UID 10001 is the same numeric identity our Kubernetes manifest +
+# docker-compose run as. Distroless doesn't ship /etc/passwd entries
+# beyond `nonroot` (UID 65532), but the kernel only cares about the
+# numeric UID, not the name. Specifying it here keeps `docker run`
+# (without K8s overrides) consistent with the rest of the deploy.
+USER 10001:10001
+WORKDIR /data
 
 ENV RACKLOG_BIND=0.0.0.0:8080 \
     RACKLOG_DATA_DIR=/data \
@@ -56,9 +70,9 @@ ENV RACKLOG_BIND=0.0.0.0:8080 \
 EXPOSE 8080
 VOLUME ["/data"]
 
-# Tiny shell-less healthcheck via the Rust binary's HTTP probe. We avoid
-# embedding curl/wget to keep the runtime image tight; the orchestrator's
-# native HTTP probe (Kubernetes httpGet, Compose healthcheck below) is the
-# preferred path. Compose sets its own healthcheck override.
+# Healthcheck is intentionally not embedded — distroless has no shell
+# and no curl. Both Kubernetes (httpGet probes) and docker-compose
+# (its own healthcheck stanza) talk HTTP directly. See
+# deploy/kubernetes/deployment.yaml + docker-compose.yml.
 
 ENTRYPOINT ["/usr/local/bin/racklog"]
